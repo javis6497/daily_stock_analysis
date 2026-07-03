@@ -27,7 +27,9 @@ class AkShareDataProvider:
 
         start_date = (date.today() - timedelta(days=lookback_days * 2)).strftime("%Y%m%d")
         asset_type = instrument.asset_type.lower()
-        if asset_type in {"etf", "fund"}:
+        if asset_type == "fund":
+            frame = ak.fund_open_fund_info_em(symbol=instrument.symbol, indicator="单位净值走势")
+        elif asset_type == "etf":
             frame = ak.fund_etf_hist_em(symbol=instrument.symbol, period="daily", start_date=start_date, adjust="qfq")
         else:
             frame = ak.stock_zh_a_hist(symbol=instrument.symbol, period="daily", start_date=start_date, adjust="qfq")
