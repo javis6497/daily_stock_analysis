@@ -1,0 +1,49 @@
+timezone: Asia/Shanghai
+
+data:
+  provider: sample
+  lookback_days: 180
+
+report:
+  top_n: 3
+  risk_profile: balanced
+  skip_non_trading_day: true
+
+notify:
+  channel: dingtalk
+
+news:
+  keywords:
+    - 政策
+    - 基金
+    - ETF
+  max_items: 8
+
+watchlist:
+  - symbol: "000001"
+    name: 平安银行
+    market: cn
+    asset_type: stock
+    tags: ["银行", "自选"]
+  - symbol: "510300"
+    name: 沪深300ETF
+    market: cn
+    asset_type: etf
+    tags: ["宽基", "基金"]
+
+candidate_pool:
+  - symbol: "510300"
+    name: 沪深300ETF
+    market: cn
+    asset_type: etf
+    tags: ["宽基"]
+  - symbol: "159915"
+    name: 创业板ETF
+    market: cn
+    asset_type: etf
+    tags: ["成长"]
+  - symbol: "000001"
+    name: 平安银行
+    market: cn
+    asset_type: stock
+    tags: ["银行"]
