@@ -115,6 +115,54 @@ def render_daily_news_report(
     return "\n".join(lines)
 
 
+def render_fund_action_report(
+    report_date: date,
+    config: AppConfig,
+    signals: list[Signal],
+) -> str:
+    fund_signals = [
+        signal
+        for signal in signals
+        if signal.instrument.asset_type.lower() in {"fund", "etf"}
+    ]
+    lines = [
+        f"# 14:00基金操作提醒 - {report_date.isoformat()}",
+        "",
+        "- 推送口径：仅自选基金/ETF操作信号，不含股票、不含资讯、不含自选外候选。",
+        "- 时间目的：基金通常需在 15:00 前确认申购/赎回，14:00 提前给出量化观察。",
+        "- 数据口径：基于当前可用最新净值/行情，场外基金净值可能存在 T 日更新滞后。",
+        "",
+        "## 自选基金操作信号",
+    ]
+
+    if fund_signals:
+        for signal in fund_signals:
+            instrument = signal.instrument
+            lines.extend(
+                [
+                    f"### {instrument.name} ({instrument.symbol})",
+                    f"- 状态：{signal.status}；动作：{signal.action}；置信度：{signal.confidence:.0%}",
+                    f"- 最新价/净值：{signal.last_close:.4f}；MA20：{_fmt(signal.ma20)}；MA60：{_fmt(signal.ma60)}；RSI：{_fmt(signal.rsi)}",
+                    _holding_line(signal),
+                    f"- 买入观察区：{signal.buy_zone.lower:.4f} - {signal.buy_zone.upper:.4f}",
+                    f"- 风险位：{signal.stop_loss:.4f}；止盈/减仓观察位：{signal.take_profit:.4f}",
+                    f"- 依据：{'；'.join(signal.reasons)}",
+                    f"- 风险：{'；'.join(signal.risks)}",
+                    "",
+                ]
+            )
+    else:
+        lines.extend(["- 当前自选列表中没有基金/ETF信号。", ""])
+
+    lines.extend(
+        [
+            "## 免责声明",
+            "本报告仅为量化研究信号和风险提示，不自动交易，不构成保证收益或个人投顾建议。任何操作需自行判断并控制仓位风险。",
+        ]
+    )
+    return "\n".join(line for line in lines if line is not None)
+
+
 def render_weekend_news_report(
     report_date: date,
     config: AppConfig,

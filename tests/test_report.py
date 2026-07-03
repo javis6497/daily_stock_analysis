@@ -116,3 +116,47 @@ def test_render_daily_news_report_contains_only_news_not_action_advice():
     assert "基金市场资讯" in markdown
     assert "买入观察区" not in markdown
     assert "自选股/基金信号" not in markdown
+
+
+def test_render_fund_action_report_contains_only_fund_signals():
+    config_mod = require_module("stock_quant.config")
+    models = require_module("stock_quant.models")
+    report = require_module("stock_quant.report")
+    stock = make_instrument("000001", "平安银行", "stock")
+    fund = make_instrument("018044", "基金018044", "fund")
+    stock_signal = models.Signal(
+        instrument=stock,
+        status="偏强",
+        action="回踩观察",
+        last_close=12.0,
+        buy_zone=models.PriceRange(11.5, 12.0),
+        stop_loss=11.0,
+        take_profit=13.0,
+        confidence=0.78,
+        reasons=("趋势向上",),
+        risks=("外部事件风险",),
+    )
+    fund_signal = models.Signal(
+        instrument=fund,
+        status="观察",
+        action="等待确认",
+        last_close=2.0,
+        buy_zone=models.PriceRange(1.9, 2.0),
+        stop_loss=1.8,
+        take_profit=2.2,
+        confidence=0.52,
+        reasons=("等待均线确认",),
+        risks=("净值滞后",),
+    )
+
+    markdown = report.render_fund_action_report(
+        report_date=date(2026, 7, 3),
+        config=config_mod.AppConfig(watchlist=[stock, fund]),
+        signals=[stock_signal, fund_signal],
+    )
+
+    assert "14:00基金操作提醒" in markdown
+    assert "基金018044" in markdown
+    assert "平安银行" not in markdown
+    assert "相关资讯" not in markdown
+    assert "自选外量化候选" not in markdown

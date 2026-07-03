@@ -12,7 +12,7 @@
 - 支持持仓成本、投入本金、估算浮盈亏和基金名称自动补全。
 - 自选外候选池按趋势、风险和资产类型打分，推送 Top N 候选观察。
 - 资讯摘要采用 AKShare 财经快讯源 + 规则过滤，不依赖 LLM。
-- GitHub Actions 支持北京时间工作日 08:30 盘前、16:30 盘后，以及周六/周日 09:30 周末资讯观察。
+- GitHub Actions 支持北京时间工作日 08:30 盘前、14:00 基金操作提醒、16:30 盘后，以及周六/周日 09:30 周末资讯观察。
 - 工作日会拆成两条钉钉消息：操作建议一条，资讯摘要一条。
 
 ## 本地运行
@@ -21,6 +21,7 @@
 python -m pip install -r requirements.txt
 Copy-Item config/watchlist.example.yml config/watchlist.yml
 python -m stock_quant report --session premarket --config config/watchlist.yml --dry-run
+python -m stock_quant report --session fund_action --config config/watchlist.yml --dry-run
 python -m stock_quant report --session postmarket --config config/watchlist.yml --dry-run
 python -m stock_quant report --session weekend_news --config config/watchlist.yml --dry-run
 python -m stock_quant backtest --config config/watchlist.yml --sample-data
@@ -105,8 +106,11 @@ python -m stock_quant report --session premarket --config config/watchlist.yml -
 - 操作建议：自选标的信号、持仓成本/盈亏、自选外候选观察。
 - 资讯摘要：相关新闻和摘要。
 
+工作日 `fund_action` 会在北京时间 14:00 单独发送一条基金操作提醒，只包含自选基金/ETF，不包含股票、资讯或自选外候选。
+
 手动触发时可选择：
 
 - `premarket`：盘前量化日报。
+- `fund_action`：14:00 基金操作提醒。
 - `postmarket`：盘后量化复盘。
 - `weekend_news`：周末资讯观察。
