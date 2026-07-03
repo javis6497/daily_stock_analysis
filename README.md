@@ -1,6 +1,6 @@
 # 股票/基金量化日报系统
 
-这是一个 Python 量化日报系统 v1。它面向个人研究用途，支持自选股/基金分析、候选标的筛选、规则资讯摘要、盘前/盘后 Markdown 报告，以及通过钉钉机器人推送。
+这是一个 Python 量化日报系统 v1。它面向个人研究用途，支持自选股/基金分析、候选标的筛选、真实资讯聚合、盘前/盘后/周末 Markdown 报告，以及通过钉钉机器人推送。
 
 系统只输出量化研究信号和风险提示，不接券商、不自动下单，不构成保证收益或个人投顾建议。
 
@@ -10,8 +10,8 @@
 - 稳健均衡策略：MA20/MA60、RSI、MACD、ATR、近期高低点和回撤控制。
 - 输出自选标的状态：观察、偏强、偏弱、买入观察区、风险位、止盈/减仓观察位。
 - 候选池按趋势、风险和资产类型打分，推送 Top N 潜力候选。
-- 资讯摘要采用规则过滤，不依赖 LLM。
-- GitHub Actions 支持北京时间 08:30 盘前、16:30 盘后定时运行。
+- 资讯摘要采用 AKShare 财经快讯源 + 规则过滤，不依赖 LLM。
+- GitHub Actions 支持北京时间工作日 08:30 盘前、16:30 盘后，以及周六/周日 09:30 周末资讯观察。
 
 ## 本地运行
 
@@ -20,6 +20,7 @@ python -m pip install -r requirements.txt
 Copy-Item config/watchlist.example.yml config/watchlist.yml
 python -m stock_quant report --session premarket --config config/watchlist.yml --dry-run
 python -m stock_quant report --session postmarket --config config/watchlist.yml --dry-run
+python -m stock_quant report --session weekend_news --config config/watchlist.yml --dry-run
 python -m stock_quant backtest --config config/watchlist.yml --sample-data
 ```
 
@@ -36,6 +37,20 @@ data:
 ```
 
 如未安装 AKShare，真实数据模式会提示安装依赖；测试不会访问网络。
+
+资讯源默认使用 AKShare：
+
+```yaml
+news:
+  provider: akshare
+  keywords:
+    - 政策
+    - 基金
+    - ETF
+  max_items: 8
+```
+
+周末报告只推送资讯和下周关注点，不生成买卖区间或交易动作。
 
 ## 钉钉推送
 
@@ -56,3 +71,9 @@ python -m stock_quant report --session premarket --config config/watchlist.yml -
 - `WATCHLIST_YAML`：完整的 `config/watchlist.yml` 内容。若不设置，workflow 会用示例配置。
 
 上传后可以在 Actions 页面手动触发 `Daily Quant Report`，确认钉钉收到测试报告。
+
+手动触发时可选择：
+
+- `premarket`：盘前量化日报。
+- `postmarket`：盘后量化复盘。
+- `weekend_news`：周末资讯观察。

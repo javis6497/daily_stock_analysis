@@ -49,3 +49,46 @@ candidate_pool:
     assert result.returncode == 0, result.stderr
     assert "盘前量化日报" in result.stdout
     assert "平安银行" in result.stdout
+
+
+def test_cli_weekend_news_dry_run_generates_news_only_report(tmp_path):
+    config_path = tmp_path / "watchlist.yml"
+    config_path.write_text(
+        """
+data:
+  provider: sample
+news:
+  provider: sample
+  keywords: ["政策", "基金"]
+  max_items: 3
+watchlist:
+  - symbol: "018044"
+    name: 基金018044
+    market: cn
+    asset_type: fund
+""",
+        encoding="utf-8",
+    )
+
+    project_root = Path(__file__).resolve().parents[1]
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "stock_quant",
+            "report",
+            "--session",
+            "weekend_news",
+            "--config",
+            str(config_path),
+            "--dry-run",
+        ],
+        cwd=str(project_root),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "周末资讯观察" in result.stdout
+    assert "买入观察区" not in result.stdout

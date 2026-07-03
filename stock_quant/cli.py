@@ -11,10 +11,10 @@ from .backtest import run_backtest
 from .calendar import is_cn_trading_day
 from .config import load_config
 from .data import create_provider, fetch_many
-from .news import filter_news, sample_news
+from .news import fetch_news, filter_news
 from .notify import send_dingtalk_markdown
 from .ranking import rank_candidates
-from .report import render_report
+from .report import render_report, render_weekend_news_report
 from .strategy import analyze_instrument
 
 
@@ -23,7 +23,7 @@ def main(argv: list[str] | None = None) -> int:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     report_parser = subparsers.add_parser("report", help="生成盘前/盘后日报")
-    report_parser.add_argument("--session", choices=["premarket", "postmarket"], required=True)
+    report_parser.add_argument("--session", choices=["premarket", "postmarket", "weekend_news"], required=True)
     report_parser.add_argument("--config", default=os.environ.get("WATCHLIST_CONFIG", "config/watchlist.yml"))
     report_parser.add_argument("--send", action="store_true", help="发送到通知通道")
     report_parser.add_argument("--dry-run", action="store_true", help="只打印报告，不发网络请求")
@@ -51,6 +51,9 @@ def _run_report(args: argparse.Namespace) -> int:
     except Exception:
         pass
 
+    if args.session == "weekend_news":
+        return _run_weekend_news_report(args, app_config, report_day)
+
     if app_config.report.skip_non_trading_day and not args.dry_run and not is_cn_trading_day(report_day):
         message = f"{report_day.isoformat()} 不是 A 股交易日，跳过日报。"
         if args.send:
@@ -73,12 +76,7 @@ def _run_report(args: argparse.Namespace) -> int:
         top_n=app_config.report.top_n,
         risk_profile=app_config.report.risk_profile,
     )
-    news_items = filter_news(
-        sample_news(),
-        list(app_config.watchlist) + list(app_config.candidate_pool),
-        app_config.news.keywords,
-        max_items=app_config.news.max_items,
-    )
+    news_items = _collect_news(app_config)
     markdown = render_report(args.session, report_day, app_config, signals, candidates, news_items)
     title = "盘前量化日报" if args.session == "premarket" else "盘后量化复盘"
 
@@ -87,6 +85,31 @@ def _run_report(args: argparse.Namespace) -> int:
     if args.dry_run or not args.send:
         print(markdown)
     return 0
+
+
+def _run_weekend_news_report(args: argparse.Namespace, app_config, report_day: date) -> int:
+    news_items = _collect_news(app_config)
+    markdown = render_weekend_news_report(report_day, app_config, news_items)
+    title = "周末资讯观察"
+
+    if args.send:
+        send_dingtalk_markdown(title, markdown, dry_run=args.dry_run)
+    if args.dry_run or not args.send:
+        print(markdown)
+    return 0
+
+
+def _collect_news(app_config) -> list:
+    source_items = fetch_news(
+        provider=app_config.news.provider,
+        max_items=max(app_config.news.max_items * 4, app_config.news.max_items),
+    )
+    return filter_news(
+        source_items,
+        list(app_config.watchlist) + list(app_config.candidate_pool),
+        app_config.news.keywords,
+        max_items=app_config.news.max_items,
+    )
 
 
 def _run_backtest(args: argparse.Namespace) -> int:

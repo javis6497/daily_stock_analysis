@@ -29,6 +29,7 @@ class NotifyConfig:
 
 @dataclass(frozen=True)
 class NewsConfig:
+    provider: str = "akshare"
     keywords: list[str] = field(default_factory=list)
     max_items: int = 8
 
@@ -72,6 +73,7 @@ def load_config(path: str | Path) -> AppConfig:
         ),
         notify=NotifyConfig(channel=str(notify_raw.get("channel", "dingtalk"))),
         news=NewsConfig(
+            provider=str(news_raw.get("provider", "akshare")),
             keywords=list(news_raw.get("keywords", []) or []),
             max_items=int(news_raw.get("max_items", 8)),
         ),

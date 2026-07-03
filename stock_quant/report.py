@@ -73,6 +73,47 @@ def render_report(
     return "\n".join(lines)
 
 
+def render_weekend_news_report(
+    report_date: date,
+    config: AppConfig,
+    news_items: list[NewsItem],
+) -> str:
+    lines = [
+        f"# 周末资讯观察 - {report_date.isoformat()}",
+        "",
+        "- 推送口径：真实资讯聚合 + 持仓关键词过滤 + 下周关注点",
+        "- 周末不生成交易价位或减仓动作，避免用休市行情给出交易结论。",
+        "",
+        "## 持仓关注",
+    ]
+    for instrument in config.watchlist:
+        lines.append(f"- {instrument.name} ({instrument.symbol})")
+
+    lines.extend(["", "## 相关资讯"])
+    if news_items:
+        for item in news_items:
+            title = f"[{item.title}]({item.url})" if item.url else item.title
+            lines.append(f"- {title} - {item.source} {item.published_at}".rstrip())
+            if item.summary:
+                lines.append(f"  - 摘要：{item.summary}")
+    else:
+        lines.append("- 暂无匹配资讯；请关注下周一开盘后的市场反馈。")
+
+    lines.extend(
+        [
+            "",
+            "## 下周关注点",
+            "- 政策、利率、汇率和海外市场变化对 A 股风险偏好的影响。",
+            "- 持仓基金相关行业是否出现持续资金流入或突发风险事件。",
+            "- 周一开盘后再结合最新净值、均线和回撤信号判断，不在周末提前下交易结论。",
+            "",
+            "## 免责声明",
+            "本报告仅为资讯聚合和量化研究辅助，不自动交易，不构成保证收益或个人投顾建议。任何操作需自行判断并控制仓位风险。",
+        ]
+    )
+    return "\n".join(lines)
+
+
 def _fmt(value: float | None) -> str:
     if value is None:
         return "N/A"

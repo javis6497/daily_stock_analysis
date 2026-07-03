@@ -24,6 +24,7 @@ candidate_pool:
     market: cn
     asset_type: etf
 news:
+  provider: akshare
   keywords: ["政策", "基金"]
 """,
         encoding="utf-8",
@@ -36,6 +37,7 @@ news:
     assert app_config.report.top_n == 2
     assert app_config.watchlist[0].symbol == "000001"
     assert app_config.candidate_pool[0].asset_type == "etf"
+    assert app_config.news.provider == "akshare"
     assert app_config.news.keywords == ["政策", "基金"]
 
 

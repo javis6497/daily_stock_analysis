@@ -13,6 +13,7 @@ notify:
   channel: dingtalk
 
 news:
+  provider: akshare
   keywords:
     - 政策
     - 基金
