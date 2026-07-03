@@ -13,6 +13,13 @@ data:
   provider: sample
 report:
   top_n: 2
+recommendation:
+  include_dynamic_a_shares: true
+  dynamic_a_share_limit: 12
+  min_turnover: 600000000
+  min_market_cap: 60000000000
+  max_pe: 60
+  max_pb: 8
 watchlist:
   - symbol: "000001"
     name: 平安银行
@@ -44,6 +51,12 @@ news:
     assert app_config.news.provider == "akshare"
     assert app_config.news.keywords == ["政策", "基金"]
     assert app_config.recommendation.enabled is True
+    assert app_config.recommendation.include_dynamic_a_shares is True
+    assert app_config.recommendation.dynamic_a_share_limit == 12
+    assert app_config.recommendation.min_turnover == 600_000_000
+    assert app_config.recommendation.min_market_cap == 60_000_000_000
+    assert app_config.recommendation.max_pe == 60
+    assert app_config.recommendation.max_pb == 8
 
 
 def test_load_config_rejects_empty_watchlist(tmp_path):

@@ -56,13 +56,23 @@ watchlist:
 
 `holding_amount` 建议填写累计投入本金。若基金名称仍是 `基金018044` 这类占位名，AKShare 可用时会尝试自动补全基金简称。
 
-自选外候选默认开启，会排除 `watchlist` 里的持仓：
+自选外候选默认开启，会排除 `watchlist` 里的持仓。A 股候选会尝试使用 AKShare 实时 A 股列表，先按成交额、市值、涨跌幅、PE/PB 做基础过滤，再取一小批候选进入历史行情评分；ETF 和少量高流动性标的保留为兜底候选池。
 
 ```yaml
 recommendation:
   enabled: true
   include_default_universe: true
+  include_dynamic_a_shares: true
   exclude_watchlist: true
+  dynamic_a_share_limit: 20
+  min_turnover: 500000000
+  min_market_cap: 50000000000
+  min_pe: 0
+  max_pe: 80
+  min_pb: 0
+  max_pb: 10
+  min_pct_change: -5
+  max_pct_change: 7
 ```
 
 候选结果是“量化候选观察”，不是买入指令。

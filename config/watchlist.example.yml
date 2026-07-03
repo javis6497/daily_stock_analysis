@@ -12,7 +12,17 @@ report:
 recommendation:
   enabled: true
   include_default_universe: true
+  include_dynamic_a_shares: true
   exclude_watchlist: true
+  dynamic_a_share_limit: 20
+  min_turnover: 500000000
+  min_market_cap: 50000000000
+  min_pe: 0
+  max_pe: 80
+  min_pb: 0
+  max_pb: 10
+  min_pct_change: -5
+  max_pct_change: 7
 
 notify:
   channel: dingtalk

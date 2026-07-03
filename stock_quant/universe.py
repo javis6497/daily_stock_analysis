@@ -32,6 +32,8 @@ def build_recommendation_pool(config: AppConfig) -> list[Instrument]:
     candidates.extend(config.candidate_pool)
     if config.recommendation.include_default_universe:
         candidates.extend(DEFAULT_RECOMMENDATION_UNIVERSE)
+    if config.recommendation.include_dynamic_a_shares:
+        candidates.extend(_fetch_dynamic_a_share_candidates(config))
 
     result: list[Instrument] = []
     seen: set[str] = set()
@@ -43,3 +45,84 @@ def build_recommendation_pool(config: AppConfig) -> list[Instrument]:
         result.append(instrument)
         seen.add(instrument.symbol)
     return result
+
+
+def _fetch_dynamic_a_share_candidates(config: AppConfig) -> list[Instrument]:
+    if config.data.provider.lower() != "akshare":
+        return []
+    try:
+        import akshare as ak
+    except ModuleNotFoundError:
+        return []
+
+    try:
+        frame = ak.stock_zh_a_spot_em()
+    except Exception:
+        return []
+
+    rows: list[tuple[float, Instrument]] = []
+    for _, row in frame.iterrows():
+        symbol = _text(row, "代码", "symbol")
+        name = _text(row, "名称", "name")
+        if not symbol or not name or _is_risky_stock_name(name):
+            continue
+
+        turnover = _number(row, "成交额", "amount")
+        market_cap = _number(row, "总市值", "market_cap")
+        pct_change = _number(row, "涨跌幅", "pct_change")
+        pe = _number(row, "市盈率-动态", "动态市盈率", "pe")
+        pb = _number(row, "市净率", "pb")
+
+        if turnover < config.recommendation.min_turnover:
+            continue
+        if market_cap < config.recommendation.min_market_cap:
+            continue
+        if not (config.recommendation.min_pct_change <= pct_change <= config.recommendation.max_pct_change):
+            continue
+        if not (config.recommendation.min_pe < pe <= config.recommendation.max_pe):
+            continue
+        if not (config.recommendation.min_pb < pb <= config.recommendation.max_pb):
+            continue
+
+        rows.append(
+            (
+                turnover,
+                Instrument(
+                    symbol=symbol,
+                    name=name,
+                    market="cn",
+                    asset_type="stock",
+                    tags=("动态A股", "候选"),
+                ),
+            )
+        )
+
+    rows.sort(key=lambda item: item[0], reverse=True)
+    limit = max(0, config.recommendation.dynamic_a_share_limit)
+    return [instrument for _, instrument in rows[:limit]]
+
+
+def _text(row, *keys: str) -> str:
+    for key in keys:
+        value = row.get(key) if hasattr(row, "get") else None
+        if value is None:
+            continue
+        text = str(value).strip()
+        if text and text.lower() != "nan":
+            return text
+    return ""
+
+
+def _number(row, *keys: str) -> float:
+    text = _text(row, *keys)
+    if not text:
+        return 0.0
+    try:
+        return float(text.replace(",", ""))
+    except ValueError:
+        return 0.0
+
+
+def _is_risky_stock_name(name: str) -> bool:
+    upper_name = name.upper()
+    return "ST" in upper_name or "退" in name
