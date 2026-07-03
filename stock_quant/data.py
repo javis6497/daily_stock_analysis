@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import replace
 from datetime import date, timedelta
 from typing import Protocol
 
@@ -53,11 +54,35 @@ def fetch_many(
     provider: MarketDataProvider,
     instruments: Sequence[Instrument],
     lookback_days: int,
+    strict: bool = True,
 ) -> dict[Instrument, list[Bar]]:
     result: dict[Instrument, list[Bar]] = {}
     for instrument in instruments:
-        result[instrument] = provider.fetch_bars(instrument, lookback_days)
+        try:
+            result[instrument] = provider.fetch_bars(instrument, lookback_days)
+        except Exception:
+            if strict:
+                raise
     return result
+
+
+def resolve_instrument_names(provider_name: str, instruments: Sequence[Instrument]) -> list[Instrument]:
+    if provider_name.lower() != "akshare":
+        return list(instruments)
+    try:
+        import akshare as ak
+    except ModuleNotFoundError:
+        return list(instruments)
+
+    fund_names = _load_fund_names(ak)
+    resolved: list[Instrument] = []
+    for instrument in instruments:
+        name = fund_names.get(instrument.symbol)
+        if name and _is_placeholder_name(instrument):
+            resolved.append(replace(instrument, name=name))
+        else:
+            resolved.append(instrument)
+    return resolved
 
 
 def _make_sample_bars(direction: str, count: int) -> list[Bar]:
@@ -102,3 +127,24 @@ def _frame_to_bars(frame) -> list[Bar]:
             )
         )
     return bars
+
+
+def _load_fund_names(ak) -> dict[str, str]:
+    try:
+        frame = ak.fund_name_em()
+    except Exception:
+        return {}
+
+    names: dict[str, str] = {}
+    for _, row in frame.iterrows():
+        symbol = row.get("基金代码") or row.get("代码") or row.get("symbol")
+        name = row.get("基金简称") or row.get("基金名称") or row.get("name")
+        if symbol and name:
+            names[str(symbol).zfill(6)] = str(name).strip()
+    return names
+
+
+def _is_placeholder_name(instrument: Instrument) -> bool:
+    name = instrument.name.strip()
+    symbol = instrument.symbol
+    return name in {symbol, f"基金{symbol}", f"股票{symbol}", f"ETF{symbol}"}

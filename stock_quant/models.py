@@ -21,6 +21,8 @@ class Instrument:
     market: str
     asset_type: str
     tags: tuple[str, ...] = field(default_factory=tuple)
+    cost_price: float | None = None
+    holding_amount: float | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "symbol", str(self.symbol))
@@ -28,6 +30,10 @@ class Instrument:
         object.__setattr__(self, "asset_type", str(self.asset_type))
         if not isinstance(self.tags, tuple):
             object.__setattr__(self, "tags", tuple(self.tags))
+        if self.cost_price is not None:
+            object.__setattr__(self, "cost_price", float(self.cost_price))
+        if self.holding_amount is not None:
+            object.__setattr__(self, "holding_amount", float(self.holding_amount))
 
 
 @dataclass(frozen=True)

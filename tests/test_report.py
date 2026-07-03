@@ -49,3 +49,70 @@ def test_render_report_contains_watchlist_candidates_news_and_disclaimer():
     assert "沪深300ETF" in markdown
     assert "政策利好" in markdown
     assert "不构成保证收益" in markdown
+
+
+def test_render_report_contains_holding_cost_amount_and_estimated_pnl():
+    config_mod = require_module("stock_quant.config")
+    models = require_module("stock_quant.models")
+    report = require_module("stock_quant.report")
+
+    instrument = models.Instrument(
+        symbol="018044",
+        name="基金018044",
+        market="cn",
+        asset_type="fund",
+        cost_price=2.0,
+        holding_amount=10000,
+    )
+    signal = models.Signal(
+        instrument=instrument,
+        status="偏强",
+        action="回踩观察",
+        last_close=2.2,
+        buy_zone=models.PriceRange(2.1, 2.2),
+        stop_loss=1.9,
+        take_profit=2.4,
+        confidence=0.78,
+        reasons=("趋势向上",),
+        risks=("外部事件风险",),
+    )
+    app_config = config_mod.AppConfig(watchlist=[instrument])
+
+    markdown = report.render_action_report(
+        session="premarket",
+        report_date=date(2026, 7, 3),
+        config=app_config,
+        signals=[signal],
+        candidates=[],
+    )
+
+    assert "持仓成本：2.0000" in markdown
+    assert "投入本金：10000.00" in markdown
+    assert "估算盈亏：10.00%" in markdown
+    assert "1000.00" in markdown
+
+
+def test_render_daily_news_report_contains_only_news_not_action_advice():
+    config_mod = require_module("stock_quant.config")
+    news_mod = require_module("stock_quant.news")
+    report = require_module("stock_quant.report")
+    app_config = config_mod.AppConfig(watchlist=[make_instrument("018044", "基金018044", "fund")])
+
+    markdown = report.render_daily_news_report(
+        session="premarket",
+        report_date=date(2026, 7, 3),
+        config=app_config,
+        news_items=[
+            news_mod.NewsItem(
+                title="基金市场资讯",
+                source="测试源",
+                url="https://example.com/news",
+                published_at="2026-07-03 08:00",
+            )
+        ],
+    )
+
+    assert "盘前资讯摘要" in markdown
+    assert "基金市场资讯" in markdown
+    assert "买入观察区" not in markdown
+    assert "自选股/基金信号" not in markdown

@@ -9,9 +9,11 @@
 - A 股、ETF、公募基金优先；港股/美股后续通过数据源适配器扩展。
 - 稳健均衡策略：MA20/MA60、RSI、MACD、ATR、近期高低点和回撤控制。
 - 输出自选标的状态：观察、偏强、偏弱、买入观察区、风险位、止盈/减仓观察位。
-- 候选池按趋势、风险和资产类型打分，推送 Top N 潜力候选。
+- 支持持仓成本、投入本金、估算浮盈亏和基金名称自动补全。
+- 自选外候选池按趋势、风险和资产类型打分，推送 Top N 候选观察。
 - 资讯摘要采用 AKShare 财经快讯源 + 规则过滤，不依赖 LLM。
 - GitHub Actions 支持北京时间工作日 08:30 盘前、16:30 盘后，以及周六/周日 09:30 周末资讯观察。
+- 工作日会拆成两条钉钉消息：操作建议一条，资讯摘要一条。
 
 ## 本地运行
 
@@ -37,6 +39,32 @@ data:
 ```
 
 如未安装 AKShare，真实数据模式会提示安装依赖；测试不会访问网络。
+
+持仓成本和投入本金只写在你的 `WATCHLIST_YAML` Secret 里：
+
+```yaml
+watchlist:
+  - symbol: "018044"
+    name: 基金018044
+    market: cn
+    asset_type: fund
+    cost_price: 2.0000
+    holding_amount: 10000
+    tags: ["持仓", "基金"]
+```
+
+`holding_amount` 建议填写累计投入本金。若基金名称仍是 `基金018044` 这类占位名，AKShare 可用时会尝试自动补全基金简称。
+
+自选外候选默认开启，会排除 `watchlist` 里的持仓：
+
+```yaml
+recommendation:
+  enabled: true
+  include_default_universe: true
+  exclude_watchlist: true
+```
+
+候选结果是“量化候选观察”，不是买入指令。
 
 资讯源默认使用 AKShare：
 
@@ -71,6 +99,11 @@ python -m stock_quant report --session premarket --config config/watchlist.yml -
 - `WATCHLIST_YAML`：完整的 `config/watchlist.yml` 内容。若不设置，workflow 会用示例配置。
 
 上传后可以在 Actions 页面手动触发 `Daily Quant Report`，确认钉钉收到测试报告。
+
+工作日 `premarket` / `postmarket` 会发送两条钉钉消息：
+
+- 操作建议：自选标的信号、持仓成本/盈亏、自选外候选观察。
+- 资讯摘要：相关新闻和摘要。
 
 手动触发时可选择：
 

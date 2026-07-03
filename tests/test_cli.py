@@ -92,3 +92,27 @@ watchlist:
     assert result.returncode == 0, result.stderr
     assert "周末资讯观察" in result.stdout
     assert "买入观察区" not in result.stdout
+
+
+def test_send_daily_messages_sends_action_and_news_separately(monkeypatch):
+    cli = __import__("stock_quant.cli", fromlist=["cli"])
+    sent = []
+
+    def fake_send(title, markdown, dry_run=False):
+        sent.append((title, markdown, dry_run))
+
+    monkeypatch.setattr(cli, "send_dingtalk_markdown", fake_send)
+
+    cli._send_messages(
+        [
+            ("盘前操作建议", "action text"),
+            ("盘前资讯摘要", "news text"),
+        ],
+        send=True,
+        dry_run=False,
+    )
+
+    assert sent == [
+        ("盘前操作建议", "action text", False),
+        ("盘前资讯摘要", "news text", False),
+    ]

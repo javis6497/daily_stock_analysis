@@ -9,6 +9,11 @@ report:
   risk_profile: balanced
   skip_non_trading_day: true
 
+recommendation:
+  enabled: true
+  include_default_universe: true
+  exclude_watchlist: true
+
 notify:
   channel: dingtalk
 
@@ -25,11 +30,15 @@ watchlist:
     name: 平安银行
     market: cn
     asset_type: stock
+    cost_price: 10.50
+    holding_amount: 12000
     tags: ["银行", "自选"]
   - symbol: "510300"
     name: 沪深300ETF
     market: cn
     asset_type: etf
+    cost_price: 4.10
+    holding_amount: 8000
     tags: ["宽基", "基金"]
 
 candidate_pool:

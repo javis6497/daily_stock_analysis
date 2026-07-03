@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+from dataclasses import replace
 from datetime import date
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -10,12 +11,13 @@ from zoneinfo import ZoneInfo
 from .backtest import run_backtest
 from .calendar import is_cn_trading_day
 from .config import load_config
-from .data import create_provider, fetch_many
+from .data import create_provider, fetch_many, resolve_instrument_names
 from .news import fetch_news, filter_news
 from .notify import send_dingtalk_markdown
 from .ranking import rank_candidates
-from .report import render_report, render_weekend_news_report
+from .report import render_action_report, render_daily_news_report, render_weekend_news_report
 from .strategy import analyze_instrument
+from .universe import build_recommendation_pool
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -44,6 +46,8 @@ def main(argv: list[str] | None = None) -> int:
 def _run_report(args: argparse.Namespace) -> int:
     config_path = _resolve_config(args.config)
     app_config = load_config(config_path)
+    provider_name = "sample" if args.sample_data else app_config.data.provider
+    app_config = _resolve_display_names(app_config, provider_name)
     report_day = date.today()
     try:
         report_day = date.today()
@@ -62,11 +66,10 @@ def _run_report(args: argparse.Namespace) -> int:
             print(message)
         return 0
 
-    provider_name = "sample" if args.sample_data else app_config.data.provider
     provider = create_provider(provider_name)
     watch_bars = fetch_many(provider, app_config.watchlist, app_config.data.lookback_days)
-    candidate_pool = app_config.candidate_pool or app_config.watchlist
-    candidate_bars = fetch_many(provider, candidate_pool, app_config.data.lookback_days)
+    candidate_pool = build_recommendation_pool(app_config)
+    candidate_bars = fetch_many(provider, candidate_pool, app_config.data.lookback_days, strict=False)
     signals = [
         analyze_instrument(instrument, bars, app_config.report.risk_profile)
         for instrument, bars in watch_bars.items()
@@ -77,13 +80,22 @@ def _run_report(args: argparse.Namespace) -> int:
         risk_profile=app_config.report.risk_profile,
     )
     news_items = _collect_news(app_config)
-    markdown = render_report(args.session, report_day, app_config, signals, candidates, news_items)
-    title = "盘前量化日报" if args.session == "premarket" else "盘后量化复盘"
-
-    if args.send:
-        send_dingtalk_markdown(title, markdown, dry_run=args.dry_run)
-    if args.dry_run or not args.send:
-        print(markdown)
+    action_title = "盘前操作建议" if args.session == "premarket" else "盘后操作复盘"
+    news_title = "盘前资讯摘要" if args.session == "premarket" else "盘后资讯摘要"
+    _send_messages(
+        [
+            (
+                action_title,
+                render_action_report(args.session, report_day, app_config, signals, candidates),
+            ),
+            (
+                news_title,
+                render_daily_news_report(args.session, report_day, app_config, news_items),
+            ),
+        ],
+        send=args.send,
+        dry_run=args.dry_run,
+    )
     return 0
 
 
@@ -112,10 +124,29 @@ def _collect_news(app_config) -> list:
     )
 
 
+def _resolve_display_names(app_config, provider_name: str):
+    return replace(
+        app_config,
+        watchlist=resolve_instrument_names(provider_name, app_config.watchlist),
+        candidate_pool=resolve_instrument_names(provider_name, app_config.candidate_pool),
+    )
+
+
+def _send_messages(messages: list[tuple[str, str]], send: bool, dry_run: bool) -> None:
+    for idx, (title, markdown) in enumerate(messages):
+        if send:
+            send_dingtalk_markdown(title, markdown, dry_run=dry_run)
+        if dry_run or not send:
+            if idx:
+                print("\n---\n")
+            print(markdown)
+
+
 def _run_backtest(args: argparse.Namespace) -> int:
     config_path = _resolve_config(args.config)
     app_config = load_config(config_path)
     provider_name = "sample" if args.sample_data else app_config.data.provider
+    app_config = _resolve_display_names(app_config, provider_name)
     provider = create_provider(provider_name)
     bars_by_instrument = fetch_many(provider, app_config.watchlist, app_config.data.lookback_days)
     result = [

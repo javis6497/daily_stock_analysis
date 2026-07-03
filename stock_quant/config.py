@@ -35,12 +35,20 @@ class NewsConfig:
 
 
 @dataclass(frozen=True)
+class RecommendationConfig:
+    enabled: bool = True
+    include_default_universe: bool = True
+    exclude_watchlist: bool = True
+
+
+@dataclass(frozen=True)
 class AppConfig:
     timezone: str = "Asia/Shanghai"
     data: DataConfig = field(default_factory=DataConfig)
     report: ReportConfig = field(default_factory=ReportConfig)
     notify: NotifyConfig = field(default_factory=NotifyConfig)
     news: NewsConfig = field(default_factory=NewsConfig)
+    recommendation: RecommendationConfig = field(default_factory=RecommendationConfig)
     watchlist: list[Instrument] = field(default_factory=list)
     candidate_pool: list[Instrument] = field(default_factory=list)
 
@@ -59,6 +67,7 @@ def load_config(path: str | Path) -> AppConfig:
     report_raw = raw.get("report", {}) or {}
     notify_raw = raw.get("notify", {}) or {}
     news_raw = raw.get("news", {}) or {}
+    recommendation_raw = raw.get("recommendation", {}) or {}
 
     return AppConfig(
         timezone=str(raw.get("timezone", "Asia/Shanghai")),
@@ -76,6 +85,11 @@ def load_config(path: str | Path) -> AppConfig:
             provider=str(news_raw.get("provider", "akshare")),
             keywords=list(news_raw.get("keywords", []) or []),
             max_items=int(news_raw.get("max_items", 8)),
+        ),
+        recommendation=RecommendationConfig(
+            enabled=bool(recommendation_raw.get("enabled", True)),
+            include_default_universe=bool(recommendation_raw.get("include_default_universe", True)),
+            exclude_watchlist=bool(recommendation_raw.get("exclude_watchlist", True)),
         ),
         watchlist=watchlist,
         candidate_pool=[_parse_instrument(item) for item in raw.get("candidate_pool", [])],
@@ -97,4 +111,12 @@ def _parse_instrument(raw: dict[str, Any]) -> Instrument:
         market=str(raw["market"]),
         asset_type=str(raw["asset_type"]),
         tags=tuple(raw.get("tags", []) or []),
+        cost_price=_optional_float(raw.get("cost_price")),
+        holding_amount=_optional_float(raw.get("holding_amount")),
     )
+
+
+def _optional_float(value: Any) -> float | None:
+    if value in (None, ""):
+        return None
+    return float(value)

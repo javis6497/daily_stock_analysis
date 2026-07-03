@@ -18,6 +18,8 @@ watchlist:
     name: 平安银行
     market: cn
     asset_type: stock
+    cost_price: 10.5
+    holding_amount: 12000
 candidate_pool:
   - symbol: "510300"
     name: 沪深300ETF
@@ -36,9 +38,12 @@ news:
     assert app_config.data.provider == "sample"
     assert app_config.report.top_n == 2
     assert app_config.watchlist[0].symbol == "000001"
+    assert app_config.watchlist[0].cost_price == 10.5
+    assert app_config.watchlist[0].holding_amount == 12000.0
     assert app_config.candidate_pool[0].asset_type == "etf"
     assert app_config.news.provider == "akshare"
     assert app_config.news.keywords == ["政策", "基金"]
+    assert app_config.recommendation.enabled is True
 
 
 def test_load_config_rejects_empty_watchlist(tmp_path):
