@@ -52,3 +52,13 @@ def test_workflow_skips_duplicate_scheduled_session_with_daily_cache_marker():
     assert "cache_key=report-sent-${SESSION}-${report_date}" in workflow
     assert "key: ${{ steps.report-meta.outputs.cache_key }}" in workflow
     assert "github.event_name != 'schedule' || steps.sent-cache.outputs.cache-hit != 'true'" in workflow
+
+
+def test_workflow_notifies_dingtalk_when_report_job_fails():
+    workflow = _workflow_text()
+
+    assert "Notify failure" in workflow
+    assert "failure()" in workflow
+    assert "env.DINGTALK_WEBHOOK != ''" in workflow
+    assert "python -m stock_quant notify-failure" in workflow
+    assert "--run-url" in workflow

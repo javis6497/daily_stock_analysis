@@ -90,7 +90,10 @@ watchlist:
     )
 
     assert result.returncode == 0, result.stderr
-    assert "周末资讯观察" in result.stdout
+    assert "周末量化周报" in result.stdout
+    assert "本周持仓回顾" in result.stdout
+    assert "基金018044" in result.stdout
+    assert "本周涨跌" in result.stdout
     assert "买入观察区" not in result.stdout
 
 
@@ -137,6 +140,34 @@ watchlist:
     assert "基金018044" in result.stdout
     assert "平安银行" not in result.stdout
     assert "资讯摘要" not in result.stdout
+
+
+def test_cli_notify_failure_dry_run_generates_failure_message():
+    project_root = Path(__file__).resolve().parents[1]
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "stock_quant",
+            "notify-failure",
+            "--session",
+            "premarket",
+            "--report-date",
+            "2026-07-04",
+            "--run-url",
+            "https://github.com/example/repo/actions/runs/1",
+            "--dry-run",
+        ],
+        cwd=str(project_root),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "量化日报任务失败" in result.stdout
+    assert "premarket" in result.stdout
+    assert "https://github.com/example/repo/actions/runs/1" in result.stdout
 
 
 def test_send_daily_messages_sends_action_and_news_separately(monkeypatch):

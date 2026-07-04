@@ -27,6 +27,10 @@ watchlist:
     asset_type: stock
     cost_price: 10.5
     holding_amount: 12000
+    target_weight: 0.25
+    max_weight: 0.35
+    risk_level: medium
+    note: 核心持仓
 candidate_pool:
   - symbol: "510300"
     name: 沪深300ETF
@@ -47,6 +51,10 @@ news:
     assert app_config.watchlist[0].symbol == "000001"
     assert app_config.watchlist[0].cost_price == 10.5
     assert app_config.watchlist[0].holding_amount == 12000.0
+    assert app_config.watchlist[0].target_weight == 0.25
+    assert app_config.watchlist[0].max_weight == 0.35
+    assert app_config.watchlist[0].risk_level == "medium"
+    assert app_config.watchlist[0].note == "核心持仓"
     assert app_config.candidate_pool[0].asset_type == "etf"
     assert app_config.news.provider == "akshare"
     assert app_config.news.keywords == ["政策", "基金"]

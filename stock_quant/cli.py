@@ -16,6 +16,7 @@ from .news import fetch_news, filter_news
 from .notify import send_dingtalk_markdown
 from .ranking import rank_candidates
 from .report import (
+    render_failure_report,
     render_action_report,
     render_daily_news_report,
     render_fund_action_report,
@@ -23,6 +24,7 @@ from .report import (
 )
 from .strategy import analyze_instrument
 from .universe import build_recommendation_pool
+from .weekly import build_weekly_reviews
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -40,11 +42,20 @@ def main(argv: list[str] | None = None) -> int:
     backtest_parser.add_argument("--config", default=os.environ.get("WATCHLIST_CONFIG", "config/watchlist.yml"))
     backtest_parser.add_argument("--sample-data", action="store_true")
 
+    failure_parser = subparsers.add_parser("notify-failure", help="发送 GitHub Actions 失败通知")
+    failure_parser.add_argument("--session", default="unknown")
+    failure_parser.add_argument("--report-date", default="")
+    failure_parser.add_argument("--run-url", default="")
+    failure_parser.add_argument("--message", default="")
+    failure_parser.add_argument("--dry-run", action="store_true")
+
     args = parser.parse_args(argv)
     if args.command == "report":
         return _run_report(args)
     if args.command == "backtest":
         return _run_backtest(args)
+    if args.command == "notify-failure":
+        return _run_notify_failure(args)
     return 2
 
 
@@ -108,8 +119,24 @@ def _run_report(args: argparse.Namespace) -> int:
 
 def _run_weekend_news_report(args: argparse.Namespace, app_config, report_day: date) -> int:
     news_items = _collect_news(app_config)
-    markdown = render_weekend_news_report(report_day, app_config, news_items)
-    title = "周末资讯观察"
+    provider = create_provider("sample" if args.sample_data else app_config.data.provider)
+    watch_bars = fetch_many(provider, app_config.watchlist, app_config.data.lookback_days, strict=False)
+    candidate_pool = build_recommendation_pool(app_config)
+    candidate_bars = fetch_many(provider, candidate_pool, app_config.data.lookback_days, strict=False)
+    weekly_reviews = build_weekly_reviews(watch_bars, app_config.report.risk_profile)
+    candidates = rank_candidates(
+        candidate_bars,
+        top_n=app_config.report.top_n,
+        risk_profile=app_config.report.risk_profile,
+    )
+    markdown = render_weekend_news_report(
+        report_day,
+        app_config,
+        news_items,
+        weekly_reviews=weekly_reviews,
+        candidates=candidates,
+    )
+    title = "周末量化周报"
 
     if args.send:
         send_dingtalk_markdown(title, markdown, dry_run=args.dry_run)
@@ -186,6 +213,21 @@ def _run_backtest(args: argparse.Namespace) -> int:
         for instrument, bars in bars_by_instrument.items()
     ]
     print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
+
+
+def _run_notify_failure(args: argparse.Namespace) -> int:
+    report_date = args.report_date or date.today().isoformat()
+    markdown = render_failure_report(
+        report_date=report_date,
+        session=args.session,
+        run_url=args.run_url,
+        message=args.message,
+    )
+    if args.dry_run:
+        print(markdown)
+        return 0
+    send_dingtalk_markdown("量化日报任务失败", markdown, dry_run=False)
     return 0
 
 

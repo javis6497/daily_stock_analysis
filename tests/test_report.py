@@ -63,6 +63,10 @@ def test_render_report_contains_holding_cost_amount_and_estimated_pnl():
         asset_type="fund",
         cost_price=2.0,
         holding_amount=10000,
+        target_weight=0.2,
+        max_weight=0.3,
+        risk_level="medium",
+        note="核心基金",
     )
     signal = models.Signal(
         instrument=instrument,
@@ -90,6 +94,14 @@ def test_render_report_contains_holding_cost_amount_and_estimated_pnl():
     assert "投入本金：10000.00" in markdown
     assert "估算盈亏：10.00%" in markdown
     assert "1000.00" in markdown
+    assert "持仓级建议" in markdown
+    assert "继续持有" in markdown
+    assert "目标仓位：20%" in markdown
+    assert "最大仓位：30%" in markdown
+    assert "风险等级：medium" in markdown
+    assert "备注：核心基金" in markdown
+    assert "距离风险位" in markdown
+    assert "距离止盈观察位" in markdown
 
 
 def test_render_daily_news_report_contains_only_news_not_action_advice():

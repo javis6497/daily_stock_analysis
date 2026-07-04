@@ -133,6 +133,10 @@ def _parse_instrument(raw: dict[str, Any]) -> Instrument:
         tags=tuple(raw.get("tags", []) or []),
         cost_price=_optional_float(raw.get("cost_price")),
         holding_amount=_optional_float(raw.get("holding_amount")),
+        target_weight=_optional_float(raw.get("target_weight")),
+        max_weight=_optional_float(raw.get("max_weight")),
+        risk_level=_optional_str(raw.get("risk_level")),
+        note=_optional_str(raw.get("note")),
     )
 
 
@@ -140,3 +144,9 @@ def _optional_float(value: Any) -> float | None:
     if value in (None, ""):
         return None
     return float(value)
+
+
+def _optional_str(value: Any) -> str | None:
+    if value in (None, ""):
+        return None
+    return str(value)

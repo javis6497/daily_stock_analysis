@@ -121,6 +121,15 @@ jobs:
             python -m stock_quant report --session "$SESSION" --config config/watchlist.yml --dry-run
           fi
 
+      - name: Notify failure
+        if: failure() && env.DINGTALK_WEBHOOK != '' && (github.event_name != 'schedule' || steps.sent-cache.outputs.cache-hit != 'true')
+        shell: bash
+        run: |
+          report_date="${REPORT_DATE:-$(TZ=Asia/Shanghai date +%F)}"
+          session="${SESSION:-unknown}"
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          python -m stock_quant notify-failure --session "$session" --report-date "$report_date" --run-url "$run_url" --message "Daily Quant Report workflow failed"
+
       - name: Write scheduled send marker
         if: github.event_name == 'schedule' && steps.sent-cache.outputs.cache-hit != 'true' && success()
         shell: bash

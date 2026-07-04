@@ -23,6 +23,10 @@ class Instrument:
     tags: tuple[str, ...] = field(default_factory=tuple)
     cost_price: float | None = None
     holding_amount: float | None = None
+    target_weight: float | None = None
+    max_weight: float | None = None
+    risk_level: str | None = None
+    note: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "symbol", str(self.symbol))
@@ -34,6 +38,14 @@ class Instrument:
             object.__setattr__(self, "cost_price", float(self.cost_price))
         if self.holding_amount is not None:
             object.__setattr__(self, "holding_amount", float(self.holding_amount))
+        if self.target_weight is not None:
+            object.__setattr__(self, "target_weight", float(self.target_weight))
+        if self.max_weight is not None:
+            object.__setattr__(self, "max_weight", float(self.max_weight))
+        if self.risk_level is not None:
+            object.__setattr__(self, "risk_level", str(self.risk_level))
+        if self.note is not None:
+            object.__setattr__(self, "note", str(self.note))
 
 
 @dataclass(frozen=True)
@@ -67,3 +79,11 @@ class CandidateScore:
     score: float
     signal: Signal
     reasons: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class WeeklyHoldingReview:
+    instrument: Instrument
+    signal: Signal
+    weekly_change: float | None = None
+    weekly_drawdown: float | None = None

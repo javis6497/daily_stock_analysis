@@ -42,6 +42,10 @@ watchlist:
     asset_type: stock
     cost_price: 10.50
     holding_amount: 12000
+    target_weight: 0.20
+    max_weight: 0.30
+    risk_level: medium
+    note: 核心观察
     tags: ["银行", "自选"]
   - symbol: "510300"
     name: 沪深300ETF
@@ -49,6 +53,10 @@ watchlist:
     asset_type: etf
     cost_price: 4.10
     holding_amount: 8000
+    target_weight: 0.15
+    max_weight: 0.25
+    risk_level: low
+    note: 宽基底仓
     tags: ["宽基", "基金"]
 
 candidate_pool:
