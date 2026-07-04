@@ -79,6 +79,7 @@ class CandidateScore:
     score: float
     signal: Signal
     reasons: tuple[str, ...]
+    group: str = "未分组"
 
 
 @dataclass(frozen=True)
@@ -87,3 +88,26 @@ class WeeklyHoldingReview:
     signal: Signal
     weekly_change: float | None = None
     weekly_drawdown: float | None = None
+
+
+@dataclass(frozen=True)
+class MarketIndexSignal:
+    instrument: Instrument
+    status: str
+    last_close: float
+    ma20: float | None
+    ma60: float | None
+    pct20: float | None
+    drawdown60: float | None
+
+
+@dataclass(frozen=True)
+class MarketEnvironment:
+    status: str
+    risk_level: str
+    position_bias: str
+    summary: str
+    index_signals: tuple[MarketIndexSignal, ...] = field(default_factory=tuple)
+    up_count: int | None = None
+    down_count: int | None = None
+    total_turnover: float | None = None

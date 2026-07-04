@@ -32,6 +32,8 @@ class AkShareDataProvider:
             frame = ak.fund_open_fund_info_em(symbol=instrument.symbol, indicator="单位净值走势")
         elif asset_type == "etf":
             frame = ak.fund_etf_hist_em(symbol=instrument.symbol, period="daily", start_date=start_date, adjust="qfq")
+        elif asset_type == "index":
+            frame = _fetch_index_frame(ak, instrument.symbol)
         else:
             frame = ak.stock_zh_a_hist(symbol=instrument.symbol, period="daily", start_date=start_date, adjust="qfq")
 
@@ -127,6 +129,13 @@ def _frame_to_bars(frame) -> list[Bar]:
             )
         )
     return bars
+
+
+def _fetch_index_frame(ak, symbol: str):
+    try:
+        return ak.stock_zh_index_daily_em(symbol=symbol)
+    except Exception:
+        return ak.stock_zh_index_daily(symbol=symbol)
 
 
 def _load_fund_names(ak) -> dict[str, str]:

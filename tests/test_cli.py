@@ -48,6 +48,7 @@ candidate_pool:
 
     assert result.returncode == 0, result.stderr
     assert "盘前量化日报" in result.stdout
+    assert "市场环境" in result.stdout
     assert "平安银行" in result.stdout
 
 

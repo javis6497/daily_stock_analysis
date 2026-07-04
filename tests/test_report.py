@@ -8,6 +8,7 @@ from tests.helpers import make_bars, make_instrument, require_module
 def test_render_report_contains_watchlist_candidates_news_and_disclaimer():
     config_mod = require_module("stock_quant.config")
     news_mod = require_module("stock_quant.news")
+    models = require_module("stock_quant.models")
     ranking = require_module("stock_quant.ranking")
     report = require_module("stock_quant.report")
     strategy = require_module("stock_quant.strategy")
@@ -25,6 +26,13 @@ def test_render_report_contains_watchlist_candidates_news_and_disclaimer():
     )
     signals = [strategy.analyze_instrument(watch, make_bars("up", count=90))]
     candidates = ranking.rank_candidates({candidate: make_bars("up", count=90)}, 1, "balanced")
+    market_environment = models.MarketEnvironment(
+        status="进攻",
+        risk_level="偏低",
+        position_bias="可维持均衡偏进攻",
+        summary="主要宽基指数趋势向上。",
+        index_signals=(),
+    )
     news_items = [
         news_mod.NewsItem(
             title="政策利好推动指数基金关注度提升",
@@ -41,12 +49,18 @@ def test_render_report_contains_watchlist_candidates_news_and_disclaimer():
         signals=signals,
         candidates=candidates,
         news_items=news_items,
+        market_environment=market_environment,
     )
 
     assert "盘前量化日报" in markdown
+    assert "市场环境" in markdown
+    assert "进攻" in markdown
+    assert "可维持均衡偏进攻" in markdown
     assert "平安银行" in markdown
     assert "潜力候选" in markdown
     assert "沪深300ETF" in markdown
+    assert "分组" in markdown
+    assert "筛选理由" in markdown
     assert "政策利好" in markdown
     assert "不构成保证收益" in markdown
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date
 
 from .config import AppConfig
-from .models import CandidateScore, Signal, WeeklyHoldingReview
+from .models import CandidateScore, MarketEnvironment, Signal, WeeklyHoldingReview
 from .news import NewsItem
 
 
@@ -14,10 +14,11 @@ def render_report(
     signals: list[Signal],
     candidates: list[CandidateScore],
     news_items: list[NewsItem],
+    market_environment: MarketEnvironment | None = None,
 ) -> str:
     return "\n\n---\n\n".join(
         [
-            render_action_report(session, report_date, config, signals, candidates),
+            render_action_report(session, report_date, config, signals, candidates, market_environment),
             render_daily_news_report(session, report_date, config, news_items),
         ]
     )
@@ -29,6 +30,7 @@ def render_action_report(
     config: AppConfig,
     signals: list[Signal],
     candidates: list[CandidateScore],
+    market_environment: MarketEnvironment | None = None,
 ) -> str:
     title = "盘前量化日报" if session == "premarket" else "盘后量化复盘"
     lines = [
@@ -37,8 +39,9 @@ def render_action_report(
         f"- 风险档位：{config.report.risk_profile}",
         f"- 推送口径：量化研究信号 + 风险提示 + 人工确认",
         "",
-        "## 自选股/基金信号",
     ]
+    lines.extend(_market_environment_lines(market_environment))
+    lines.extend(["", "## 自选股/基金信号"])
 
     if signals:
         for signal in signals:
@@ -69,7 +72,8 @@ def render_action_report(
             lines.extend(
                 [
                     f"{rank}. {candidate.instrument.name} ({candidate.instrument.symbol}) - 综合分 {candidate.score:.2f}",
-                    f"   - 状态：{signal.status}；观察区：{signal.buy_zone.lower:.4f} - {signal.buy_zone.upper:.4f}；风险位：{signal.stop_loss:.4f}",
+                    f"   - 状态：{signal.status}；分组：{candidate.group}；观察区：{signal.buy_zone.lower:.4f} - {signal.buy_zone.upper:.4f}；风险位：{signal.stop_loss:.4f}",
+                    f"   - 筛选理由：{'；'.join(candidate.reasons)}",
                 ]
             )
     else:
@@ -122,6 +126,7 @@ def render_fund_action_report(
     report_date: date,
     config: AppConfig,
     signals: list[Signal],
+    market_environment: MarketEnvironment | None = None,
 ) -> str:
     fund_signals = [
         signal
@@ -135,8 +140,9 @@ def render_fund_action_report(
         "- 时间目的：基金通常需在 15:00 前确认申购/赎回，14:00 提前给出量化观察。",
         "- 数据口径：基于当前可用最新净值/行情，场外基金净值可能存在 T 日更新滞后。",
         "",
-        "## 自选基金操作信号",
     ]
+    lines.extend(_market_environment_lines(market_environment))
+    lines.extend(["", "## 自选基金操作信号"])
 
     if fund_signals:
         for signal in fund_signals:
@@ -175,6 +181,7 @@ def render_weekend_news_report(
     news_items: list[NewsItem],
     weekly_reviews: list[WeeklyHoldingReview] | None = None,
     candidates: list[CandidateScore] | None = None,
+    market_environment: MarketEnvironment | None = None,
 ) -> str:
     weekly_reviews = weekly_reviews or []
     candidates = candidates or []
@@ -184,8 +191,9 @@ def render_weekend_news_report(
         "- 推送口径：本周持仓回顾 + 自选外候选更新 + 资讯摘要 + 下周观察计划",
         "- 周末不生成具体交易价位或即时卖出指令，避免用休市行情给出交易结论。",
         "",
-        "## 本周持仓回顾",
     ]
+    lines.extend(_market_environment_lines(market_environment))
+    lines.extend(["", "## 本周持仓回顾"])
     if weekly_reviews:
         for review in weekly_reviews:
             signal = review.signal
@@ -204,7 +212,7 @@ def render_weekend_news_report(
     if candidates:
         for rank, candidate in enumerate(candidates, start=1):
             lines.append(
-                f"{rank}. {candidate.instrument.name} ({candidate.instrument.symbol}) - 综合分 {candidate.score:.2f}；状态：{candidate.signal.status}"
+                f"{rank}. {candidate.instrument.name} ({candidate.instrument.symbol}) - 综合分 {candidate.score:.2f}；状态：{candidate.signal.status}；分组：{candidate.group}"
             )
     else:
         lines.append("- 暂无可用候选更新。")
@@ -262,6 +270,28 @@ def render_failure_report(
         ]
     )
     return "\n".join(lines)
+
+
+def _market_environment_lines(market_environment: MarketEnvironment | None) -> list[str]:
+    if market_environment is None:
+        return [
+            "## 市场环境",
+            "- 暂无可用宽基指数环境数据，按个股/基金自身信号和风险位执行。",
+        ]
+    lines = [
+        "## 市场环境",
+        f"- 总体状态：{market_environment.status}；风险等级：{market_environment.risk_level}",
+        f"- 仓位倾向：{market_environment.position_bias}",
+        f"- 摘要：{market_environment.summary}",
+    ]
+    if market_environment.index_signals:
+        details = []
+        for signal in market_environment.index_signals[:4]:
+            details.append(
+                f"{signal.instrument.name}{signal.status}/20日{_pct(signal.pct20)}/回撤{_pct(signal.drawdown60)}"
+            )
+        lines.append(f"- 宽基观察：{'；'.join(details)}")
+    return lines
 
 
 def _fmt(value: float | None) -> str:

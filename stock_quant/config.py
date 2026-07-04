@@ -39,9 +39,12 @@ class RecommendationConfig:
     enabled: bool = True
     include_default_universe: bool = True
     include_dynamic_a_shares: bool = True
+    include_dynamic_etfs: bool = True
     exclude_watchlist: bool = True
     dynamic_a_share_limit: int = 20
+    dynamic_etf_limit: int = 20
     min_turnover: float = 500_000_000
+    min_etf_turnover: float = 100_000_000
     min_market_cap: float = 50_000_000_000
     min_pe: float = 0.0
     max_pe: float = 80.0
@@ -49,6 +52,8 @@ class RecommendationConfig:
     max_pb: float = 10.0
     min_pct_change: float = -5.0
     max_pct_change: float = 7.0
+    max_candidate_single_day_pct: float = 0.07
+    max_candidates_per_group: int = 2
 
 
 @dataclass(frozen=True)
@@ -100,9 +105,12 @@ def load_config(path: str | Path) -> AppConfig:
             enabled=bool(recommendation_raw.get("enabled", True)),
             include_default_universe=bool(recommendation_raw.get("include_default_universe", True)),
             include_dynamic_a_shares=bool(recommendation_raw.get("include_dynamic_a_shares", True)),
+            include_dynamic_etfs=bool(recommendation_raw.get("include_dynamic_etfs", True)),
             exclude_watchlist=bool(recommendation_raw.get("exclude_watchlist", True)),
             dynamic_a_share_limit=int(recommendation_raw.get("dynamic_a_share_limit", 20)),
+            dynamic_etf_limit=int(recommendation_raw.get("dynamic_etf_limit", 20)),
             min_turnover=float(recommendation_raw.get("min_turnover", 500_000_000)),
+            min_etf_turnover=float(recommendation_raw.get("min_etf_turnover", 100_000_000)),
             min_market_cap=float(recommendation_raw.get("min_market_cap", 50_000_000_000)),
             min_pe=float(recommendation_raw.get("min_pe", 0)),
             max_pe=float(recommendation_raw.get("max_pe", 80)),
@@ -110,6 +118,8 @@ def load_config(path: str | Path) -> AppConfig:
             max_pb=float(recommendation_raw.get("max_pb", 10)),
             min_pct_change=float(recommendation_raw.get("min_pct_change", -5)),
             max_pct_change=float(recommendation_raw.get("max_pct_change", 7)),
+            max_candidate_single_day_pct=float(recommendation_raw.get("max_candidate_single_day_pct", 0.07)),
+            max_candidates_per_group=int(recommendation_raw.get("max_candidates_per_group", 2)),
         ),
         watchlist=watchlist,
         candidate_pool=[_parse_instrument(item) for item in raw.get("candidate_pool", [])],

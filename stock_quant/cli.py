@@ -12,6 +12,7 @@ from .backtest import run_backtest
 from .calendar import is_cn_trading_day
 from .config import load_config
 from .data import create_provider, fetch_many, resolve_instrument_names
+from .market import build_market_environment
 from .news import fetch_news, filter_news
 from .notify import send_dingtalk_markdown
 from .ranking import rank_candidates
@@ -85,6 +86,7 @@ def _run_report(args: argparse.Namespace) -> int:
         return 0
 
     provider = create_provider(provider_name)
+    market_environment = build_market_environment(provider, app_config.data.lookback_days)
     watch_bars = fetch_many(provider, app_config.watchlist, app_config.data.lookback_days)
     candidate_pool = build_recommendation_pool(app_config)
     candidate_bars = fetch_many(provider, candidate_pool, app_config.data.lookback_days, strict=False)
@@ -96,6 +98,9 @@ def _run_report(args: argparse.Namespace) -> int:
         candidate_bars,
         top_n=app_config.report.top_n,
         risk_profile=app_config.report.risk_profile,
+        max_per_group=app_config.recommendation.max_candidates_per_group,
+        max_single_day_pct=app_config.recommendation.max_candidate_single_day_pct,
+        market_environment=market_environment,
     )
     news_items = _collect_news(app_config)
     action_title = "盘前操作建议" if args.session == "premarket" else "盘后操作复盘"
@@ -104,7 +109,7 @@ def _run_report(args: argparse.Namespace) -> int:
         [
             (
                 action_title,
-                render_action_report(args.session, report_day, app_config, signals, candidates),
+                render_action_report(args.session, report_day, app_config, signals, candidates, market_environment),
             ),
             (
                 news_title,
@@ -120,6 +125,7 @@ def _run_report(args: argparse.Namespace) -> int:
 def _run_weekend_news_report(args: argparse.Namespace, app_config, report_day: date) -> int:
     news_items = _collect_news(app_config)
     provider = create_provider("sample" if args.sample_data else app_config.data.provider)
+    market_environment = build_market_environment(provider, app_config.data.lookback_days)
     watch_bars = fetch_many(provider, app_config.watchlist, app_config.data.lookback_days, strict=False)
     candidate_pool = build_recommendation_pool(app_config)
     candidate_bars = fetch_many(provider, candidate_pool, app_config.data.lookback_days, strict=False)
@@ -128,6 +134,9 @@ def _run_weekend_news_report(args: argparse.Namespace, app_config, report_day: d
         candidate_bars,
         top_n=app_config.report.top_n,
         risk_profile=app_config.report.risk_profile,
+        max_per_group=app_config.recommendation.max_candidates_per_group,
+        max_single_day_pct=app_config.recommendation.max_candidate_single_day_pct,
+        market_environment=market_environment,
     )
     markdown = render_weekend_news_report(
         report_day,
@@ -135,6 +144,7 @@ def _run_weekend_news_report(args: argparse.Namespace, app_config, report_day: d
         news_items,
         weekly_reviews=weekly_reviews,
         candidates=candidates,
+        market_environment=market_environment,
     )
     title = "周末量化周报"
 
@@ -160,12 +170,13 @@ def _run_fund_action_report(args: argparse.Namespace, app_config, report_day: da
         if instrument.asset_type.lower() in {"fund", "etf"}
     ]
     provider = create_provider(provider_name)
+    market_environment = build_market_environment(provider, app_config.data.lookback_days)
     watch_bars = fetch_many(provider, fund_watchlist, app_config.data.lookback_days)
     signals = [
         analyze_instrument(instrument, bars, app_config.report.risk_profile)
         for instrument, bars in watch_bars.items()
     ]
-    markdown = render_fund_action_report(report_day, app_config, signals)
+    markdown = render_fund_action_report(report_day, app_config, signals, market_environment)
     _send_messages([("14:00基金操作提醒", markdown)], send=args.send, dry_run=args.dry_run)
     return 0
 

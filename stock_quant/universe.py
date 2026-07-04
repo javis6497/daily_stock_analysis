@@ -34,6 +34,8 @@ def build_recommendation_pool(config: AppConfig) -> list[Instrument]:
         candidates.extend(DEFAULT_RECOMMENDATION_UNIVERSE)
     if config.recommendation.include_dynamic_a_shares:
         candidates.extend(_fetch_dynamic_a_share_candidates(config))
+    if config.recommendation.include_dynamic_etfs:
+        candidates.extend(_fetch_dynamic_etf_candidates(config))
 
     result: list[Instrument] = []
     seen: set[str] = set()
@@ -102,6 +104,51 @@ def _fetch_dynamic_a_share_candidates(config: AppConfig) -> list[Instrument]:
     return [instrument for _, instrument in rows[:limit]]
 
 
+def _fetch_dynamic_etf_candidates(config: AppConfig) -> list[Instrument]:
+    if config.data.provider.lower() != "akshare":
+        return []
+    try:
+        import akshare as ak
+    except ModuleNotFoundError:
+        return []
+
+    try:
+        frame = ak.fund_etf_spot_em()
+    except Exception:
+        return []
+
+    rows: list[tuple[float, Instrument]] = []
+    for _, row in frame.iterrows():
+        symbol = _text(row, "代码", "基金代码", "symbol")
+        name = _text(row, "名称", "基金简称", "name")
+        if not symbol or not name:
+            continue
+
+        turnover = _number(row, "成交额", "amount")
+        pct_change = _number(row, "涨跌幅", "pct_change")
+        if turnover < config.recommendation.min_etf_turnover:
+            continue
+        if abs(pct_change) > config.recommendation.max_candidate_single_day_pct * 100:
+            continue
+
+        rows.append(
+            (
+                turnover,
+                Instrument(
+                    symbol=symbol,
+                    name=name,
+                    market="cn",
+                    asset_type="etf",
+                    tags=(_candidate_group(name), "动态ETF", "候选"),
+                ),
+            )
+        )
+
+    rows.sort(key=lambda item: item[0], reverse=True)
+    limit = max(0, config.recommendation.dynamic_etf_limit)
+    return [instrument for _, instrument in rows[:limit]]
+
+
 def _text(row, *keys: str) -> str:
     for key in keys:
         value = row.get(key) if hasattr(row, "get") else None
@@ -126,3 +173,21 @@ def _number(row, *keys: str) -> float:
 def _is_risky_stock_name(name: str) -> bool:
     upper_name = name.upper()
     return "ST" in upper_name or "退" in name
+
+
+def _candidate_group(name: str) -> str:
+    rules = (
+        ("科技", ("科技", "芯片", "半导体", "计算机", "人工智能", "AI", "科创")),
+        ("金融", ("证券", "券商", "银行", "保险", "金融")),
+        ("消费", ("消费", "食品", "酒", "家电")),
+        ("医药", ("医药", "医疗", "创新药", "生物")),
+        ("新能源", ("新能源", "电池", "光伏", "锂电", "电力")),
+        ("宽基", ("沪深", "中证", "上证", "创业板", "红利", "A500", "50ETF", "300ETF", "500ETF")),
+        ("周期", ("煤炭", "钢铁", "有色", "化工")),
+        ("军工", ("军工", "国防")),
+    )
+    upper_name = name.upper()
+    for group, keywords in rules:
+        if any(keyword in name or keyword in upper_name for keyword in keywords):
+            return group
+    return "主题"
