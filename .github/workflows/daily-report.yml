@@ -4,12 +4,28 @@ on:
   schedule:
     # Beijing 08:30, Monday-Friday.
     - cron: "30 0 * * 1-5"
+    # Beijing 08:45, Monday-Friday fallback.
+    - cron: "45 0 * * 1-5"
+    # Beijing 09:00, Monday-Friday fallback.
+    - cron: "0 1 * * 1-5"
     # Beijing 14:00, Monday-Friday.
     - cron: "0 6 * * 1-5"
+    # Beijing 14:15, Monday-Friday fallback.
+    - cron: "15 6 * * 1-5"
+    # Beijing 14:30, Monday-Friday fallback.
+    - cron: "30 6 * * 1-5"
     # Beijing 16:30, Monday-Friday.
     - cron: "30 8 * * 1-5"
+    # Beijing 16:45, Monday-Friday fallback.
+    - cron: "45 8 * * 1-5"
+    # Beijing 17:00, Monday-Friday fallback.
+    - cron: "0 9 * * 1-5"
     # Beijing 09:30, Saturday-Sunday.
     - cron: "30 1 * * 6,0"
+    # Beijing 09:45, Saturday-Sunday fallback.
+    - cron: "45 1 * * 6,0"
+    # Beijing 10:00, Saturday-Sunday fallback.
+    - cron: "0 2 * * 6,0"
   workflow_dispatch:
     inputs:
       session:
@@ -22,6 +38,10 @@ on:
           - postmarket
           - fund_action
           - weekend_news
+
+concurrency:
+  group: daily-quant-report-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   report:
@@ -58,20 +78,41 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "SESSION=${{ github.event.inputs.session }}" >> "$GITHUB_ENV"
-          elif [ "${{ github.event.schedule }}" = "30 0 * * 1-5" ]; then
+          elif [ "${{ github.event.schedule }}" = "30 0 * * 1-5" ] || [ "${{ github.event.schedule }}" = "45 0 * * 1-5" ] || [ "${{ github.event.schedule }}" = "0 1 * * 1-5" ]; then
             echo "SESSION=premarket" >> "$GITHUB_ENV"
-          elif [ "${{ github.event.schedule }}" = "0 6 * * 1-5" ]; then
+          elif [ "${{ github.event.schedule }}" = "0 6 * * 1-5" ] || [ "${{ github.event.schedule }}" = "15 6 * * 1-5" ] || [ "${{ github.event.schedule }}" = "30 6 * * 1-5" ]; then
             echo "SESSION=fund_action" >> "$GITHUB_ENV"
-          elif [ "${{ github.event.schedule }}" = "30 1 * * 6,0" ]; then
+          elif [ "${{ github.event.schedule }}" = "30 8 * * 1-5" ] || [ "${{ github.event.schedule }}" = "45 8 * * 1-5" ] || [ "${{ github.event.schedule }}" = "0 9 * * 1-5" ]; then
+            echo "SESSION=postmarket" >> "$GITHUB_ENV"
+          elif [ "${{ github.event.schedule }}" = "30 1 * * 6,0" ] || [ "${{ github.event.schedule }}" = "45 1 * * 6,0" ] || [ "${{ github.event.schedule }}" = "0 2 * * 6,0" ]; then
             echo "SESSION=weekend_news" >> "$GITHUB_ENV"
           else
-            echo "SESSION=postmarket" >> "$GITHUB_ENV"
+            echo "::error::Unsupported schedule: ${{ github.event.schedule }}"
+            exit 1
           fi
 
+      - name: Set Beijing report date
+        id: report-meta
+        shell: bash
+        run: |
+          report_date="$(TZ=Asia/Shanghai date +%F)"
+          echo "REPORT_DATE=$report_date" >> "$GITHUB_ENV"
+          echo "cache_key=report-sent-${SESSION}-${report_date}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore scheduled send marker
+        id: sent-cache
+        if: github.event_name == 'schedule'
+        uses: actions/cache/restore@v4
+        with:
+          path: .report-sent
+          key: ${{ steps.report-meta.outputs.cache_key }}
+
       - name: Run tests
+        if: github.event_name != 'schedule' || steps.sent-cache.outputs.cache-hit != 'true'
         run: python -m pytest
 
       - name: Generate and send report
+        if: github.event_name != 'schedule' || steps.sent-cache.outputs.cache-hit != 'true'
         shell: bash
         run: |
           if [ -n "$DINGTALK_WEBHOOK" ]; then
@@ -79,3 +120,17 @@ jobs:
           else
             python -m stock_quant report --session "$SESSION" --config config/watchlist.yml --dry-run
           fi
+
+      - name: Write scheduled send marker
+        if: github.event_name == 'schedule' && steps.sent-cache.outputs.cache-hit != 'true' && success()
+        shell: bash
+        run: |
+          mkdir -p .report-sent
+          printf 'sent %s on %s\n' "$SESSION" "$REPORT_DATE" > ".report-sent/${{ steps.report-meta.outputs.cache_key }}"
+
+      - name: Save scheduled send marker
+        if: github.event_name == 'schedule' && steps.sent-cache.outputs.cache-hit != 'true' && success()
+        uses: actions/cache/save@v4
+        with:
+          path: .report-sent
+          key: ${{ steps.report-meta.outputs.cache_key }}
