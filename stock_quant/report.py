@@ -3,7 +3,16 @@ from __future__ import annotations
 from datetime import date
 
 from .config import AppConfig
-from .models import CandidateScore, MarketEnvironment, Signal, WeeklyHoldingReview
+from .models import (
+    BacktestSummary,
+    CandidateScore,
+    DataFreshnessReport,
+    MarketEnvironment,
+    MonthlyHoldingReview,
+    PortfolioSummary,
+    Signal,
+    WeeklyHoldingReview,
+)
 from .news import NewsItem
 
 
@@ -15,10 +24,23 @@ def render_report(
     candidates: list[CandidateScore],
     news_items: list[NewsItem],
     market_environment: MarketEnvironment | None = None,
+    portfolio_summary: PortfolioSummary | None = None,
+    freshness_report: DataFreshnessReport | None = None,
+    backtest_summary: BacktestSummary | None = None,
 ) -> str:
     return "\n\n---\n\n".join(
         [
-            render_action_report(session, report_date, config, signals, candidates, market_environment),
+            render_action_report(
+                session,
+                report_date,
+                config,
+                signals,
+                candidates,
+                market_environment,
+                portfolio_summary,
+                freshness_report,
+                backtest_summary,
+            ),
             render_daily_news_report(session, report_date, config, news_items),
         ]
     )
@@ -31,6 +53,9 @@ def render_action_report(
     signals: list[Signal],
     candidates: list[CandidateScore],
     market_environment: MarketEnvironment | None = None,
+    portfolio_summary: PortfolioSummary | None = None,
+    freshness_report: DataFreshnessReport | None = None,
+    backtest_summary: BacktestSummary | None = None,
 ) -> str:
     title = "盘前量化日报" if session == "premarket" else "盘后量化复盘"
     lines = [
@@ -41,6 +66,9 @@ def render_action_report(
         "",
     ]
     lines.extend(_market_environment_lines(market_environment))
+    lines.extend(["", *_portfolio_summary_lines(portfolio_summary)])
+    lines.extend(["", *_freshness_lines(freshness_report)])
+    lines.extend(["", *_backtest_summary_lines(backtest_summary)])
     lines.extend(["", "## 自选股/基金信号"])
 
     if signals:
@@ -180,10 +208,12 @@ def render_weekend_news_report(
     config: AppConfig,
     news_items: list[NewsItem],
     weekly_reviews: list[WeeklyHoldingReview] | None = None,
+    monthly_reviews: list[MonthlyHoldingReview] | None = None,
     candidates: list[CandidateScore] | None = None,
     market_environment: MarketEnvironment | None = None,
 ) -> str:
     weekly_reviews = weekly_reviews or []
+    monthly_reviews = monthly_reviews or []
     candidates = candidates or []
     lines = [
         f"# 周末量化周报 - {report_date.isoformat()}",
@@ -207,6 +237,19 @@ def render_weekend_news_report(
     else:
         for instrument in config.watchlist:
             lines.append(f"- {instrument.name} ({instrument.symbol})：暂无可用周度行情，先关注资讯和下周开盘确认。")
+
+    lines.extend(["", "## 月度复盘"])
+    if monthly_reviews:
+        for review in monthly_reviews:
+            lines.extend(
+                [
+                    f"### {review.instrument.name} ({review.instrument.symbol})",
+                    f"- 近30日涨跌：{_pct(review.monthly_change)}；近30日最大回撤：{_pct(review.monthly_drawdown)}",
+                    f"- 当前状态：{review.signal.status}；复盘提示：{_monthly_review_note(review.signal.status)}",
+                ]
+            )
+    else:
+        lines.append("- 暂无可用月度行情。")
 
     lines.extend(["", "## 自选外候选更新"])
     if candidates:
@@ -294,6 +337,64 @@ def _market_environment_lines(market_environment: MarketEnvironment | None) -> l
     return lines
 
 
+def _portfolio_summary_lines(portfolio_summary: PortfolioSummary | None) -> list[str]:
+    lines = ["## 组合总览"]
+    if portfolio_summary is None or portfolio_summary.total_principal <= 0:
+        lines.append("- 暂无持仓金额配置，无法估算组合视角。")
+        return lines
+    lines.extend(
+        [
+            f"- 投入本金：{portfolio_summary.total_principal:.2f}",
+            f"- 组合估算市值：{portfolio_summary.total_market_value:.2f}",
+            f"- 估算总盈亏：{portfolio_summary.total_pnl_pct:.2%}（{portfolio_summary.total_pnl_amount:.2f}）",
+        ]
+    )
+    if portfolio_summary.positions:
+        top_positions = sorted(portfolio_summary.positions, key=lambda item: item.weight, reverse=True)[:5]
+        details = [
+            f"{position.instrument.name}{position.weight:.2%}/盈亏{position.pnl_pct:.2%}"
+            for position in top_positions
+        ]
+        if details:
+            lines.append(f"- 持仓占比：{'；'.join(details)}")
+    if portfolio_summary.warnings:
+        lines.append(f"- 仓位提醒：{'；'.join(portfolio_summary.warnings)}")
+    return lines
+
+
+def _freshness_lines(freshness_report: DataFreshnessReport | None) -> list[str]:
+    lines = ["## 数据新鲜度"]
+    if freshness_report is None:
+        lines.append("- 暂无数据新鲜度检查结果。")
+        return lines
+    latest = freshness_report.latest_date.isoformat() if freshness_report.latest_date else "N/A"
+    lines.append(f"- 最新行情日期：{latest}")
+    if freshness_report.stale_symbols:
+        lines.append(f"- 滞后标的：{', '.join(freshness_report.stale_symbols)}")
+    if freshness_report.failed_symbols:
+        lines.append(f"- 获取失败：{', '.join(freshness_report.failed_symbols)}")
+    if not freshness_report.stale_symbols and not freshness_report.failed_symbols:
+        lines.append("- 数据状态：未发现明显滞后或缺失。")
+    return lines
+
+
+def _backtest_summary_lines(backtest_summary: BacktestSummary | None) -> list[str]:
+    lines = ["## 回测摘要"]
+    if backtest_summary is None or backtest_summary.instrument_count == 0:
+        lines.append("- 暂无足够历史数据生成回测摘要。")
+        return lines
+    lines.extend(
+        [
+            f"- 覆盖标的：{backtest_summary.instrument_count}",
+            f"- 平均区间收益：{backtest_summary.average_period_return:.2%}",
+            f"- 最大回撤：{backtest_summary.max_drawdown:.2%}",
+            f"- 信号成功率：{backtest_summary.signal_success_rate:.2%}",
+            f"- 结论：{backtest_summary.summary}",
+        ]
+    )
+    return lines
+
+
 def _fmt(value: float | None) -> str:
     if value is None:
         return "N/A"
@@ -376,3 +477,11 @@ def _next_week_focus(signal: Signal) -> str:
     if signal.status == "偏弱":
         return f"观察能否重新站回 MA20（{_fmt(signal.ma20)}），否则继续控制回撤"
     return f"观察 MA20（{_fmt(signal.ma20)}）与 MA60（{_fmt(signal.ma60)}）方向是否重新一致"
+
+
+def _monthly_review_note(status: str) -> str:
+    if status == "偏强":
+        return "月度趋势偏强，继续关注回撤是否受控。"
+    if status == "偏弱":
+        return "月度表现偏弱，优先控制仓位和风险位。"
+    return "月度方向未完全确认，等待趋势进一步清晰。"

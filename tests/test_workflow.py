@@ -62,3 +62,11 @@ def test_workflow_notifies_dingtalk_when_report_job_fails():
     assert "env.DINGTALK_WEBHOOK != ''" in workflow
     assert "python -m stock_quant notify-failure" in workflow
     assert "--run-url" in workflow
+
+
+def test_workflow_archives_generated_reports_as_artifact():
+    workflow = _workflow_text()
+
+    assert "--archive-dir reports" in workflow
+    assert "actions/upload-artifact@v4" in workflow
+    assert "daily-quant-report-${{ env.SESSION }}-${{ env.REPORT_DATE }}" in workflow

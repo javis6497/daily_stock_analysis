@@ -111,3 +111,57 @@ class MarketEnvironment:
     up_count: int | None = None
     down_count: int | None = None
     total_turnover: float | None = None
+
+
+@dataclass(frozen=True)
+class PortfolioPosition:
+    instrument: Instrument
+    market_value: float
+    principal: float
+    pnl_amount: float
+    pnl_pct: float
+    weight: float
+    max_weight_breached: bool = False
+
+
+@dataclass(frozen=True)
+class PortfolioSummary:
+    total_principal: float
+    total_market_value: float
+    total_pnl_amount: float
+    total_pnl_pct: float
+    positions: tuple[PortfolioPosition, ...] = field(default_factory=tuple)
+    warnings: tuple[str, ...] = field(default_factory=tuple)
+
+
+@dataclass(frozen=True)
+class DataFreshnessItem:
+    instrument: Instrument
+    latest_date: date | None
+    age_days: int | None
+    status: str
+
+
+@dataclass(frozen=True)
+class DataFreshnessReport:
+    latest_date: date | None
+    stale_symbols: tuple[str, ...] = field(default_factory=tuple)
+    failed_symbols: tuple[str, ...] = field(default_factory=tuple)
+    items: tuple[DataFreshnessItem, ...] = field(default_factory=tuple)
+
+
+@dataclass(frozen=True)
+class BacktestSummary:
+    instrument_count: int
+    average_period_return: float
+    max_drawdown: float
+    signal_success_rate: float
+    summary: str
+
+
+@dataclass(frozen=True)
+class MonthlyHoldingReview:
+    instrument: Instrument
+    signal: Signal
+    monthly_change: float | None = None
+    monthly_drawdown: float | None = None

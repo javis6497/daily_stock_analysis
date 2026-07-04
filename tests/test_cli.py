@@ -52,6 +52,54 @@ candidate_pool:
     assert "平安银行" in result.stdout
 
 
+def test_cli_report_archive_dir_writes_markdown_and_manifest(tmp_path):
+    config_path = tmp_path / "watchlist.yml"
+    archive_dir = tmp_path / "reports"
+    config_path.write_text(
+        """
+data:
+  provider: sample
+report:
+  top_n: 1
+news:
+  provider: sample
+watchlist:
+  - symbol: "000001"
+    name: 平安银行
+    market: cn
+    asset_type: stock
+""",
+        encoding="utf-8",
+    )
+
+    project_root = Path(__file__).resolve().parents[1]
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "stock_quant",
+            "report",
+            "--session",
+            "premarket",
+            "--config",
+            str(config_path),
+            "--dry-run",
+            "--archive-dir",
+            str(archive_dir),
+        ],
+        cwd=str(project_root),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    markdown_files = list(archive_dir.glob("*.md"))
+    assert markdown_files
+    assert (archive_dir / "manifest.json").exists()
+    assert "盘前量化日报" in markdown_files[0].read_text(encoding="utf-8")
+
+
 def test_cli_weekend_news_dry_run_generates_news_only_report(tmp_path):
     config_path = tmp_path / "watchlist.yml"
     config_path.write_text(

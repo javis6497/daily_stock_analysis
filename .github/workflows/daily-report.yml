@@ -116,10 +116,18 @@ jobs:
         shell: bash
         run: |
           if [ -n "$DINGTALK_WEBHOOK" ]; then
-            python -m stock_quant report --session "$SESSION" --config config/watchlist.yml --send
+            python -m stock_quant report --session "$SESSION" --config config/watchlist.yml --send --archive-dir reports
           else
-            python -m stock_quant report --session "$SESSION" --config config/watchlist.yml --dry-run
+            python -m stock_quant report --session "$SESSION" --config config/watchlist.yml --dry-run --archive-dir reports
           fi
+
+      - name: Upload report artifact
+        if: (github.event_name != 'schedule' || steps.sent-cache.outputs.cache-hit != 'true') && success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: daily-quant-report-${{ env.SESSION }}-${{ env.REPORT_DATE }}
+          path: reports
+          if-no-files-found: ignore
 
       - name: Notify failure
         if: failure() && env.DINGTALK_WEBHOOK != '' && (github.event_name != 'schedule' || steps.sent-cache.outputs.cache-hit != 'true')

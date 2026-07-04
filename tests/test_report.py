@@ -118,6 +118,72 @@ def test_render_report_contains_holding_cost_amount_and_estimated_pnl():
     assert "距离止盈观察位" in markdown
 
 
+def test_render_action_report_contains_portfolio_freshness_and_backtest_summary():
+    config_mod = require_module("stock_quant.config")
+    models = require_module("stock_quant.models")
+    report = require_module("stock_quant.report")
+    instrument = models.Instrument(
+        symbol="018044",
+        name="基金018044",
+        market="cn",
+        asset_type="fund",
+        cost_price=2.0,
+        holding_amount=10000,
+    )
+    signal = models.Signal(
+        instrument=instrument,
+        status="偏强",
+        action="回踩观察",
+        last_close=2.2,
+        buy_zone=models.PriceRange(2.1, 2.2),
+        stop_loss=1.9,
+        take_profit=2.4,
+        confidence=0.78,
+        reasons=("趋势向上",),
+        risks=("外部事件风险",),
+    )
+    portfolio_summary = models.PortfolioSummary(
+        total_principal=10000,
+        total_market_value=11000,
+        total_pnl_amount=1000,
+        total_pnl_pct=0.1,
+        positions=(),
+        warnings=("基金018044 超过最大仓位",),
+    )
+    freshness_report = models.DataFreshnessReport(
+        latest_date=date(2026, 7, 3),
+        stale_symbols=("012922",),
+        failed_symbols=("017731",),
+        items=(),
+    )
+    backtest_summary = models.BacktestSummary(
+        instrument_count=1,
+        average_period_return=12.5,
+        max_drawdown=0.08,
+        signal_success_rate=0.66,
+        summary="偏强信号历史表现较好",
+    )
+
+    markdown = report.render_action_report(
+        session="premarket",
+        report_date=date(2026, 7, 4),
+        config=config_mod.AppConfig(watchlist=[instrument]),
+        signals=[signal],
+        candidates=[],
+        portfolio_summary=portfolio_summary,
+        freshness_report=freshness_report,
+        backtest_summary=backtest_summary,
+    )
+
+    assert "组合总览" in markdown
+    assert "组合估算市值：11000.00" in markdown
+    assert "数据新鲜度" in markdown
+    assert "最新行情日期：2026-07-03" in markdown
+    assert "获取失败：017731" in markdown
+    assert "回测摘要" in markdown
+    assert "信号成功率：66.00%" in markdown
+
+
 def test_render_daily_news_report_contains_only_news_not_action_advice():
     config_mod = require_module("stock_quant.config")
     news_mod = require_module("stock_quant.news")

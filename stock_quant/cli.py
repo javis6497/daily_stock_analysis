@@ -6,15 +6,18 @@ import os
 from dataclasses import replace
 from datetime import date
 from pathlib import Path
+from re import sub
 from zoneinfo import ZoneInfo
 
 from .backtest import run_backtest
 from .calendar import is_cn_trading_day
 from .config import load_config
 from .data import create_provider, fetch_many, resolve_instrument_names
+from .freshness import build_data_freshness
 from .market import build_market_environment
 from .news import fetch_news, filter_news
 from .notify import send_dingtalk_markdown
+from .portfolio import build_portfolio_summary
 from .ranking import rank_candidates
 from .report import (
     render_failure_report,
@@ -26,6 +29,7 @@ from .report import (
 from .strategy import analyze_instrument
 from .universe import build_recommendation_pool
 from .weekly import build_weekly_reviews
+from .review import build_backtest_summary, build_monthly_reviews
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -38,6 +42,7 @@ def main(argv: list[str] | None = None) -> int:
     report_parser.add_argument("--send", action="store_true", help="发送到通知通道")
     report_parser.add_argument("--dry-run", action="store_true", help="只打印报告，不发网络请求")
     report_parser.add_argument("--sample-data", action="store_true", help="强制使用样例行情")
+    report_parser.add_argument("--archive-dir", default="", help="保存本次报告 Markdown 和 manifest 的目录")
 
     backtest_parser = subparsers.add_parser("backtest", help="对自选标的做简单回看")
     backtest_parser.add_argument("--config", default=os.environ.get("WATCHLIST_CONFIG", "config/watchlist.yml"))
@@ -94,6 +99,9 @@ def _run_report(args: argparse.Namespace) -> int:
         analyze_instrument(instrument, bars, app_config.report.risk_profile)
         for instrument, bars in watch_bars.items()
     ]
+    portfolio_summary = build_portfolio_summary(signals)
+    freshness_report = build_data_freshness(report_day, app_config.watchlist, watch_bars)
+    backtest_summary = build_backtest_summary(watch_bars, app_config.report.risk_profile)
     candidates = rank_candidates(
         candidate_bars,
         top_n=app_config.report.top_n,
@@ -105,20 +113,28 @@ def _run_report(args: argparse.Namespace) -> int:
     news_items = _collect_news(app_config)
     action_title = "盘前操作建议" if args.session == "premarket" else "盘后操作复盘"
     news_title = "盘前资讯摘要" if args.session == "premarket" else "盘后资讯摘要"
-    _send_messages(
-        [
-            (
-                action_title,
-                render_action_report(args.session, report_day, app_config, signals, candidates, market_environment),
+    messages = [
+        (
+            action_title,
+            render_action_report(
+                args.session,
+                report_day,
+                app_config,
+                signals,
+                candidates,
+                market_environment,
+                portfolio_summary,
+                freshness_report,
+                backtest_summary,
             ),
-            (
-                news_title,
-                render_daily_news_report(args.session, report_day, app_config, news_items),
-            ),
-        ],
-        send=args.send,
-        dry_run=args.dry_run,
-    )
+        ),
+        (
+            news_title,
+            render_daily_news_report(args.session, report_day, app_config, news_items),
+        ),
+    ]
+    _archive_messages(args.archive_dir, args.session, report_day, messages)
+    _send_messages(messages, send=args.send, dry_run=args.dry_run)
     return 0
 
 
@@ -130,6 +146,7 @@ def _run_weekend_news_report(args: argparse.Namespace, app_config, report_day: d
     candidate_pool = build_recommendation_pool(app_config)
     candidate_bars = fetch_many(provider, candidate_pool, app_config.data.lookback_days, strict=False)
     weekly_reviews = build_weekly_reviews(watch_bars, app_config.report.risk_profile)
+    monthly_reviews = build_monthly_reviews(watch_bars, app_config.report.risk_profile)
     candidates = rank_candidates(
         candidate_bars,
         top_n=app_config.report.top_n,
@@ -143,15 +160,15 @@ def _run_weekend_news_report(args: argparse.Namespace, app_config, report_day: d
         app_config,
         news_items,
         weekly_reviews=weekly_reviews,
+        monthly_reviews=monthly_reviews,
         candidates=candidates,
         market_environment=market_environment,
     )
     title = "周末量化周报"
+    messages = [(title, markdown)]
 
-    if args.send:
-        send_dingtalk_markdown(title, markdown, dry_run=args.dry_run)
-    if args.dry_run or not args.send:
-        print(markdown)
+    _archive_messages(args.archive_dir, args.session, report_day, messages)
+    _send_messages(messages, send=args.send, dry_run=args.dry_run)
     return 0
 
 
@@ -177,7 +194,9 @@ def _run_fund_action_report(args: argparse.Namespace, app_config, report_day: da
         for instrument, bars in watch_bars.items()
     ]
     markdown = render_fund_action_report(report_day, app_config, signals, market_environment)
-    _send_messages([("14:00基金操作提醒", markdown)], send=args.send, dry_run=args.dry_run)
+    messages = [("14:00基金操作提醒", markdown)]
+    _archive_messages(args.archive_dir, args.session, report_day, messages)
+    _send_messages(messages, send=args.send, dry_run=args.dry_run)
     return 0
 
 
@@ -210,6 +229,34 @@ def _send_messages(messages: list[tuple[str, str]], send: bool, dry_run: bool) -
             if idx:
                 print("\n---\n")
             print(markdown)
+
+
+def _archive_messages(
+    archive_dir: str,
+    session: str,
+    report_day: date,
+    messages: list[tuple[str, str]],
+) -> None:
+    if not archive_dir:
+        return
+    target = Path(archive_dir)
+    target.mkdir(parents=True, exist_ok=True)
+    manifest = {
+        "session": session,
+        "report_date": report_day.isoformat(),
+        "files": [],
+    }
+    for idx, (title, markdown) in enumerate(messages, start=1):
+        filename = f"{idx:02d}-{session}-{_slug(title)}.md"
+        path = target / filename
+        path.write_text(markdown, encoding="utf-8")
+        manifest["files"].append({"title": title, "path": filename})
+    (target / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _slug(text: str) -> str:
+    value = sub(r"[^0-9A-Za-z\u4e00-\u9fff_-]+", "-", text).strip("-")
+    return value or "report"
 
 
 def _run_backtest(args: argparse.Namespace) -> int:

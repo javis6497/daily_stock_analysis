@@ -11,8 +11,10 @@
 - 输出自选标的状态：观察、偏强、偏弱、买入观察区、风险位、止盈/减仓观察位。
 - 支持持仓成本、投入本金、目标仓位、最大仓位、风险等级、估算浮盈亏和基金名称自动补全。
 - 操作建议会显示市场环境、持仓级建议、距离风险位、距离止盈/减仓观察位。
+- 操作建议会生成组合总览、数据新鲜度检查和策略回测摘要。
 - 自选外候选池按趋势、风险、市场环境和行业/主题分散打分，推送 Top N 候选观察。
 - 资讯摘要采用 AKShare 财经快讯源 + 规则过滤，不依赖 LLM。
+- 报告会在 GitHub Actions 中归档为 artifact，便于回看历史 Markdown。
 - GitHub Actions 支持北京时间工作日 08:30 盘前、14:00 基金操作提醒、16:30 盘后，以及周六/周日 09:30 周末量化周报；每个定时任务带 +15 分钟、+30 分钟兜底触发。
 - 工作日会拆成两条钉钉消息：操作建议一条，资讯摘要一条。
 - GitHub Actions 运行失败时会尝试发送钉钉失败通知，附带 Actions 运行链接。
@@ -23,6 +25,7 @@
 python -m pip install -r requirements.txt
 Copy-Item config/watchlist.example.yml config/watchlist.yml
 python -m stock_quant report --session premarket --config config/watchlist.yml --dry-run
+python -m stock_quant report --session premarket --config config/watchlist.yml --dry-run --archive-dir reports
 python -m stock_quant report --session fund_action --config config/watchlist.yml --dry-run
 python -m stock_quant report --session postmarket --config config/watchlist.yml --dry-run
 python -m stock_quant report --session weekend_news --config config/watchlist.yml --dry-run
@@ -61,6 +64,10 @@ watchlist:
 ```
 
 `holding_amount` 建议填写累计投入本金。`target_weight` 和 `max_weight` 是组合目标仓位和上限仓位，用小数表示，例如 `0.20` 表示 20%。若基金名称仍是 `基金018044` 这类占位名，AKShare 可用时会尝试自动补全基金简称。
+
+操作建议中的组合总览会基于 `holding_amount`、`cost_price` 和最新价格估算组合市值、总盈亏、持仓占比和超仓提醒。若未配置持仓金额，则只显示单标的信号。
+
+数据新鲜度会显示最新行情日期、滞后标的和获取失败标的。场外基金净值可能有 T 日更新滞后，报告会把这类情况标出，避免用过期净值误判。
 
 自选外候选默认开启，会排除 `watchlist` 里的持仓。A 股候选会尝试使用 AKShare 实时 A 股列表，先按成交额、市值、涨跌幅、PE/PB 做基础过滤；ETF 候选会尝试使用 AKShare ETF 实时列表，按成交额和异常涨跌过滤。候选进入历史行情评分后，会限制同一行业/主题的数量，避免推送结果过度集中。
 
@@ -102,7 +109,9 @@ news:
   max_items: 8
 ```
 
-周末报告是“周末量化周报”：包含市场环境、本周持仓回顾、本周涨跌、本周最大回撤、自选外候选更新、相关资讯、风险事件日历和下周观察计划。周末报告不生成具体交易价位或即时卖出指令。
+回测摘要使用当前已获取的历史行情做轻量评估，输出覆盖标的数、平均区间收益、最大回撤和信号成功率，作为策略稳定性的参考，不代表未来收益。
+
+周末报告是“周末量化周报”：包含市场环境、本周持仓回顾、本周涨跌、本周最大回撤、月度复盘、自选外候选更新、相关资讯、风险事件日历和下周观察计划。周末报告不生成具体交易价位或即时卖出指令。
 
 ## 钉钉推送
 
@@ -126,7 +135,7 @@ python -m stock_quant report --session premarket --config config/watchlist.yml -
 
 工作日 `premarket` / `postmarket` 会发送两条钉钉消息：
 
-- 操作建议：市场环境、自选标的信号、持仓成本/盈亏、持仓级建议、自选外候选观察。
+- 操作建议：市场环境、组合总览、数据新鲜度、回测摘要、自选标的信号、持仓成本/盈亏、持仓级建议、自选外候选观察。
 - 资讯摘要：相关新闻和摘要。
 
 工作日 `fund_action` 会在北京时间 14:00 单独发送一条基金操作提醒，只包含自选基金/ETF，不包含股票、资讯或自选外候选。
@@ -134,6 +143,8 @@ python -m stock_quant report --session premarket --config config/watchlist.yml -
 为降低 GitHub Actions 定时任务漏触发的影响，四类自动任务都会在原时间后追加两个兜底触发点，并用“北京时间日期 + session”的缓存标记跳过重复发送。手动触发 `workflow_dispatch` 不走去重限制，方便测试。
 
 如果测试、数据获取或发送步骤失败，workflow 会尝试发送一条“量化日报任务失败”到钉钉，消息里包含本次 GitHub Actions 运行链接，便于直接定位失败步骤。
+
+每次成功生成报告后，workflow 会上传 `daily-quant-report-<session>-<date>` artifact，里面包含本次 Markdown 报告和 `manifest.json`。
 
 手动触发时可选择：
 

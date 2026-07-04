@@ -30,6 +30,12 @@ def test_render_weekend_news_report_contains_news_focus_and_no_trade_ranges():
         weekly_change=0.035,
         weekly_drawdown=0.018,
     )
+    monthly = models.MonthlyHoldingReview(
+        instrument=fund,
+        signal=signal,
+        monthly_change=0.082,
+        monthly_drawdown=0.031,
+    )
     candidate_score = models.CandidateScore(
         instrument=candidate,
         score=82.3,
@@ -66,6 +72,7 @@ def test_render_weekend_news_report_contains_news_focus_and_no_trade_ranges():
         app_config,
         items,
         weekly_reviews=[weekly],
+        monthly_reviews=[monthly],
         candidates=[candidate_score],
     )
 
@@ -75,6 +82,9 @@ def test_render_weekend_news_report_contains_news_focus_and_no_trade_ranges():
     assert "基金018044" in markdown
     assert "本周涨跌：3.50%" in markdown
     assert "本周最大回撤：1.80%" in markdown
+    assert "月度复盘" in markdown
+    assert "近30日涨跌：8.20%" in markdown
+    assert "近30日最大回撤：3.10%" in markdown
     assert "下周观察计划" in markdown
     assert "自选外候选更新" in markdown
     assert "沪深300ETF" in markdown
