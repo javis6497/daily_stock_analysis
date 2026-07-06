@@ -225,8 +225,9 @@ def test_send_daily_messages_sends_action_and_news_separately(monkeypatch):
 
     def fake_send(title, markdown, dry_run=False):
         sent.append((title, markdown, dry_run))
+        return [{"errcode": 0, "errmsg": "ok"}]
 
-    monkeypatch.setattr(cli, "send_dingtalk_markdown", fake_send)
+    monkeypatch.setattr(cli, "send_dingtalk_markdown_chunks", fake_send)
 
     cli._send_messages(
         [

@@ -21,7 +21,7 @@ from .fund_quality import build_fund_quality_profiles, fetch_fund_quality_metada
 from .ledger import write_signal_ledger
 from .market import build_market_environment
 from .news import fetch_news, filter_news
-from .notify import send_dingtalk_markdown
+from .notify import send_dingtalk_markdown, send_dingtalk_markdown_chunks
 from .position_advice import build_position_advices
 from .portfolio import build_portfolio_summary
 from .ranking import rank_candidates
@@ -311,7 +311,10 @@ def _resolve_display_names(app_config, provider_name: str):
 def _send_messages(messages: list[tuple[str, str]], send: bool, dry_run: bool) -> None:
     for idx, (title, markdown) in enumerate(messages):
         if send:
-            send_dingtalk_markdown(title, markdown, dry_run=dry_run)
+            results = send_dingtalk_markdown_chunks(title, markdown, dry_run=dry_run)
+            for part, result in enumerate(results, start=1):
+                errcode = result.get("errcode", "dry_run")
+                print(f"DingTalk sent: {title} part {part}/{len(results)} errcode={errcode}")
         if dry_run or not send:
             if idx:
                 print("\n---\n")

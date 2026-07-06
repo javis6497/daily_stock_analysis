@@ -5,6 +5,8 @@ import hashlib
 import hmac
 import urllib.parse
 
+import pytest
+
 from tests.helpers import require_module
 
 
@@ -38,3 +40,60 @@ def test_build_dingtalk_markdown_payload_has_expected_shape():
         "msgtype": "markdown",
         "markdown": {"title": "日报", "text": "## 内容"},
     }
+
+
+def test_split_markdown_chunks_preserves_text_and_limits_size():
+    notify = require_module("stock_quant.notify")
+    markdown = "\n".join([f"- 第 {idx} 行内容" for idx in range(30)])
+
+    chunks = notify.split_markdown_chunks(markdown, max_chars=80)
+
+    assert len(chunks) > 1
+    assert all(len(chunk) <= 80 for chunk in chunks)
+    assert "\n".join(chunks) == markdown
+
+
+def test_send_dingtalk_markdown_raises_when_api_errcode_is_nonzero(monkeypatch):
+    notify = require_module("stock_quant.notify")
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"errcode": 310000, "errmsg": "message too long"}
+
+    def fake_post(*args, **kwargs):
+        return FakeResponse()
+
+    monkeypatch.setattr(notify.requests, "post", fake_post)
+
+    with pytest.raises(RuntimeError, match="DingTalk send failed"):
+        notify.send_dingtalk_markdown(
+            "日报",
+            "内容",
+            webhook="https://oapi.dingtalk.com/robot/send?access_token=test",
+            secret="",
+        )
+
+
+def test_send_dingtalk_markdown_chunks_adds_part_numbers(monkeypatch):
+    notify = require_module("stock_quant.notify")
+    sent = []
+
+    def fake_send(title, markdown, **kwargs):
+        sent.append((title, markdown))
+        return {"errcode": 0, "errmsg": "ok"}
+
+    monkeypatch.setattr(notify, "send_dingtalk_markdown", fake_send)
+
+    result = notify.send_dingtalk_markdown_chunks(
+        "盘前操作建议",
+        "第一段\n第二段\n第三段",
+        max_chars=8,
+        webhook="https://example.com",
+    )
+
+    assert len(result) > 1
+    assert sent[0][0].startswith("盘前操作建议 1/")
+    assert sent[-1][0].startswith(f"盘前操作建议 {len(sent)}/")
