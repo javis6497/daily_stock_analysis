@@ -82,7 +82,17 @@ def test_write_signal_ledger_outputs_json_and_csv(tmp_path):
 def test_generate_dashboard_writes_static_pages(tmp_path):
     dashboard = require_module("stock_quant.dashboard")
     ledger = require_module("stock_quant.ledger")
-    _, signal, portfolio, market = _sample_objects()
+    audit_mod = require_module("stock_quant.report_audit")
+    instrument, signal, portfolio, market = _sample_objects()
+    thesis_review = require_module("stock_quant.models").ThesisReview(
+        instrument=instrument,
+        status="有效",
+        note="持仓逻辑未触发失效条件",
+    )
+    audit_result = audit_mod.audit_report(
+        "# 测试\n\n## 免责声明\n本报告仅为量化研究信号和风险提示，不构成保证收益或个人投顾建议。",
+        "premarket",
+    )
     ledger_manifest = ledger.write_signal_ledger(
         tmp_path / "ledger",
         session="premarket",
@@ -92,6 +102,8 @@ def test_generate_dashboard_writes_static_pages(tmp_path):
         market_environment=market,
         portfolio_summary=portfolio,
         alerts=[],
+        thesis_reviews={"018044": thesis_review},
+        audit_result=audit_result,
     )
     report_dir = tmp_path / "reports"
     report_dir.mkdir()
@@ -110,5 +122,10 @@ def test_generate_dashboard_writes_static_pages(tmp_path):
     data = json.loads((tmp_path / "site" / "data" / "latest.json").read_text(encoding="utf-8"))
     assert "量化看板" in html
     assert "基金018044" in html
+    assert "持仓逻辑跟踪" in html
+    assert "报告质检" in html
+    assert "通过" in html
     assert "Pages 发布默认关闭" in html
     assert data["signals"][0]["symbol"] == "018044"
+    assert data["thesis_reviews"]["018044"]["status"] == "有效"
+    assert data["report_audit"]["status"] == "通过"

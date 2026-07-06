@@ -170,6 +170,9 @@ def _parse_instrument(raw: dict[str, Any]) -> Instrument:
         proxy_symbol=_optional_str(raw.get("proxy_symbol")),
         proxy_name=_optional_str(raw.get("proxy_name")),
         proxy_asset_type=_optional_str(raw.get("proxy_asset_type")),
+        thesis=_optional_str(raw.get("thesis")),
+        thesis_risks=_optional_str_tuple(raw.get("thesis_risks")),
+        invalidation=_optional_str(raw.get("invalidation")),
     )
 
 
@@ -183,3 +186,11 @@ def _optional_str(value: Any) -> str | None:
     if value in (None, ""):
         return None
     return str(value)
+
+
+def _optional_str_tuple(value: Any) -> tuple[str, ...]:
+    if value in (None, ""):
+        return ()
+    if isinstance(value, str):
+        return (value,)
+    return tuple(str(item) for item in value if item not in (None, ""))

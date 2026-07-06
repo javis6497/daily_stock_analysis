@@ -59,6 +59,11 @@ watchlist:
     max_weight: 0.30
     risk_level: medium
     note: 核心观察
+    thesis: 银行板块估值修复，股息和稳健盈利提供安全垫
+    thesis_risks:
+      - 信贷质量恶化
+      - 宽基指数持续走弱
+    invalidation: 跌破风险位且连续两周信号偏弱
     tags: ["银行", "自选"]
   - symbol: "510300"
     name: 沪深300ETF
@@ -70,6 +75,11 @@ watchlist:
     max_weight: 0.25
     risk_level: low
     note: 宽基底仓
+    thesis: 宽基 ETF 作为组合底仓，跟踪市场整体修复
+    thesis_risks:
+      - 大盘趋势转弱
+      - 成交额持续萎缩
+    invalidation: 跌破 MA60 且市场环境转为防守
     proxy_symbol: "510300"
     proxy_name: 沪深300ETF
     proxy_asset_type: etf

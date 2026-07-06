@@ -13,10 +13,12 @@ from .models import (
     PortfolioSummary,
     PositionAdvice,
     Signal,
+    ThesisReview,
     WeeklyHoldingReview,
 )
 from .news import NewsItem
 from .alerts import Alert
+from .report_audit import ReportAuditResult, render_audit_summary
 
 
 def render_report(
@@ -31,6 +33,8 @@ def render_report(
     freshness_report: DataFreshnessReport | None = None,
     backtest_summary: BacktestSummary | None = None,
     position_advices: dict[str, PositionAdvice] | None = None,
+    thesis_reviews: dict[str, ThesisReview] | None = None,
+    audit_result: ReportAuditResult | None = None,
 ) -> str:
     return "\n\n---\n\n".join(
         [
@@ -45,6 +49,8 @@ def render_report(
                 freshness_report,
                 backtest_summary,
                 position_advices,
+                thesis_reviews,
+                audit_result,
             ),
             render_daily_news_report(session, report_date, config, news_items),
         ]
@@ -62,6 +68,8 @@ def render_action_report(
     freshness_report: DataFreshnessReport | None = None,
     backtest_summary: BacktestSummary | None = None,
     position_advices: dict[str, PositionAdvice] | None = None,
+    thesis_reviews: dict[str, ThesisReview] | None = None,
+    audit_result: ReportAuditResult | None = None,
 ) -> str:
     title = "盘前量化日报" if session == "premarket" else "盘后量化复盘"
     lines = [
@@ -115,6 +123,12 @@ def render_action_report(
     else:
         lines.append("- 暂无候选标的。")
 
+    lines.extend(["", *_thesis_review_lines(signals, thesis_reviews)])
+    if audit_result is not None:
+        audit_summary = render_audit_summary(audit_result)
+        if audit_summary:
+            lines.extend(["", audit_summary])
+
     lines.extend(
         [
             "",
@@ -165,6 +179,8 @@ def render_fund_action_report(
     market_environment: MarketEnvironment | None = None,
     intraday_estimates: dict[str, FundIntradayEstimate] | None = None,
     position_advices: dict[str, PositionAdvice] | None = None,
+    thesis_reviews: dict[str, ThesisReview] | None = None,
+    audit_result: ReportAuditResult | None = None,
 ) -> str:
     fund_signals = [
         signal
@@ -206,8 +222,15 @@ def render_fund_action_report(
     else:
         lines.extend(["- 当前自选列表中没有基金/ETF信号。", ""])
 
+    lines.extend(["", *_thesis_review_lines(fund_signals, thesis_reviews)])
+    if audit_result is not None:
+        audit_summary = render_audit_summary(audit_result)
+        if audit_summary:
+            lines.extend(["", audit_summary])
+
     lines.extend(
         [
+            "",
             "## 免责声明",
             "本报告仅为量化研究信号和风险提示，不自动交易，不构成保证收益或个人投顾建议。任何操作需自行判断并控制仓位风险。",
         ]
@@ -440,6 +463,31 @@ def _backtest_summary_lines(backtest_summary: BacktestSummary | None) -> list[st
     return lines
 
 
+def _thesis_review_lines(
+    signals: list[Signal],
+    thesis_reviews: dict[str, ThesisReview] | None,
+) -> list[str]:
+    lines = ["## 持仓逻辑跟踪"]
+    if not thesis_reviews:
+        lines.append("- 暂无持仓逻辑配置；可在 WATCHLIST_YAML 中为每个持仓补充 thesis、thesis_risks、invalidation。")
+        return lines
+    for signal in signals:
+        review = thesis_reviews.get(signal.instrument.symbol)
+        if review is None:
+            continue
+        instrument = signal.instrument
+        lines.append(f"- {instrument.name} ({instrument.symbol})：{review.status}；{review.note}")
+        if instrument.thesis:
+            lines.append(f"  - 持仓逻辑：{instrument.thesis}")
+        if instrument.invalidation:
+            lines.append(f"  - 失效条件：{instrument.invalidation}")
+        if instrument.thesis_risks:
+            lines.append(f"  - 主要风险：{'；'.join(instrument.thesis_risks)}")
+    if len(lines) == 1:
+        lines.append("- 暂无持仓逻辑复核结果。")
+    return lines
+
+
 def _fmt(value: float | None) -> str:
     if value is None:
         return "N/A"
@@ -520,6 +568,22 @@ def _candidate_quality_line(candidate: CandidateScore) -> str | None:
     profile = candidate.quality_profile
     if profile is None:
         return None
+    if hasattr(profile, "roe"):
+        parts = [
+            f"质量分 {profile.quality_score:.1f}",
+            f"ROE {_pct(profile.roe)}",
+            f"毛利率 {_pct(profile.gross_margin)}",
+            f"负债率 {_pct(profile.debt_ratio)}",
+            f"PE {_fmt(profile.pe)}",
+            f"PB {_fmt(profile.pb)}",
+        ]
+        if profile.dividend_yield is not None:
+            parts.append(f"股息率 {_pct(profile.dividend_yield)}")
+        if profile.market_cap is not None:
+            parts.append(f"市值 {profile.market_cap / 100_000_000:.1f}亿")
+        if getattr(profile, "reasons", None):
+            parts.append("依据 " + "；".join(profile.reasons[:3]))
+        return f"   - 基本面质量画像：{'；'.join(parts)}"
     parts = [
         f"质量分 {profile.quality_score:.1f}",
         f"近1月 {_pct(profile.return_1m)}",

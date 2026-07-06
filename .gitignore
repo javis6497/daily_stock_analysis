@@ -14,5 +14,7 @@ build/
 config/watchlist.yml
 .tmp_reports/
 .tmp_site/
+.tmp_verify_reports/
+.tmp_verify_site/
 .tmp_action_logs*/
 actions-run-*-logs.zip

@@ -8,7 +8,8 @@ from pathlib import Path
 from typing import Any
 
 from .alerts import Alert
-from .models import CandidateScore, MarketEnvironment, PortfolioSummary, Signal
+from .models import CandidateScore, MarketEnvironment, PortfolioSummary, Signal, ThesisReview
+from .report_audit import ReportAuditResult
 
 
 def write_signal_ledger(
@@ -20,6 +21,8 @@ def write_signal_ledger(
     market_environment: MarketEnvironment | None,
     portfolio_summary: PortfolioSummary | None,
     alerts: list[Alert],
+    thesis_reviews: dict[str, ThesisReview] | None = None,
+    audit_result: ReportAuditResult | None = None,
 ) -> dict[str, str]:
     target = Path(output_dir)
     target.mkdir(parents=True, exist_ok=True)
@@ -36,6 +39,8 @@ def write_signal_ledger(
         "signals": [_signal_row(signal) for signal in signals],
         "candidates": [_candidate_row(candidate) for candidate in candidates],
         "alerts": [_clean(alert) for alert in alerts],
+        "thesis_reviews": _clean(thesis_reviews or {}),
+        "report_audit": _clean(audit_result),
     }
     (target / json_name).write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     _write_csv(target / signals_csv_name, payload["signals"])
@@ -65,6 +70,9 @@ def _signal_row(signal: Signal) -> dict[str, Any]:
         "last_close": signal.last_close,
         "cost_price": instrument.cost_price,
         "holding_amount": instrument.holding_amount,
+        "thesis": instrument.thesis,
+        "invalidation": instrument.invalidation,
+        "thesis_risks": "；".join(instrument.thesis_risks),
         "pnl_pct": pnl_pct,
         "pnl_amount": pnl_amount,
         "buy_zone_lower": signal.buy_zone.lower,
@@ -84,6 +92,10 @@ def _candidate_row(candidate: CandidateScore) -> dict[str, Any]:
         "status": candidate.signal.status,
         "group": candidate.group,
         "quality_score": None if profile is None else profile.quality_score,
+        "quality_type": None if profile is None else type(profile).__name__,
+        "roe": getattr(profile, "roe", None),
+        "pe": getattr(profile, "pe", None),
+        "pb": getattr(profile, "pb", None),
         "reasons": "；".join(candidate.reasons),
     }
 

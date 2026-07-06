@@ -16,6 +16,7 @@ from .data import create_provider, fetch_many, resolve_instrument_names
 from .freshness import build_data_freshness
 from .alerts import build_alerts
 from .dashboard import generate_dashboard
+from .fundamental_quality import build_fundamental_quality_profiles, fetch_fundamental_quality_metadata
 from .fund_intraday import build_fund_intraday_estimates, build_proxy_instruments
 from .fund_quality import build_fund_quality_profiles, fetch_fund_quality_metadata
 from .ledger import write_signal_ledger
@@ -25,6 +26,7 @@ from .notify import send_dingtalk_markdown, send_dingtalk_markdown_chunks
 from .position_advice import build_position_advices
 from .portfolio import build_portfolio_summary
 from .ranking import rank_candidates
+from .report_audit import audit_report
 from .report import (
     render_failure_report,
     render_alert_report,
@@ -34,6 +36,7 @@ from .report import (
     render_weekend_news_report,
 )
 from .strategy import analyze_instrument
+from .thesis_tracker import build_thesis_reviews
 from .universe import build_recommendation_pool
 from .weekly import build_weekly_reviews
 from .review import build_backtest_summary, build_monthly_reviews
@@ -121,10 +124,7 @@ def _run_report(args: argparse.Namespace) -> int:
         turnover_cost_rate=app_config.backtest.turnover_cost_rate,
         benchmark_bars=benchmark_bars,
     )
-    quality_profiles = build_fund_quality_profiles(
-        candidate_bars,
-        fetch_fund_quality_metadata(provider_name, list(candidate_bars.keys())),
-    )
+    quality_profiles = _build_quality_profiles(provider_name, candidate_bars)
     candidates = rank_candidates(
         candidate_bars,
         top_n=app_config.report.top_n,
@@ -135,25 +135,43 @@ def _run_report(args: argparse.Namespace) -> int:
         quality_profiles=quality_profiles,
     )
     position_advices = build_position_advices(signals, portfolio_summary, market_environment)
+    thesis_reviews = build_thesis_reviews(signals)
     alerts = build_alerts(signals, candidates, freshness_report, portfolio_summary)
     news_items = _collect_news(app_config)
     action_title = "盘前操作建议" if args.session == "premarket" else "盘后操作复盘"
     news_title = "盘前资讯摘要" if args.session == "premarket" else "盘后资讯摘要"
+    action_markdown = render_action_report(
+        args.session,
+        report_day,
+        app_config,
+        signals,
+        candidates,
+        market_environment,
+        portfolio_summary,
+        freshness_report,
+        backtest_summary,
+        position_advices,
+        thesis_reviews,
+    )
+    audit_result = audit_report(action_markdown, args.session)
+    action_markdown = render_action_report(
+        args.session,
+        report_day,
+        app_config,
+        signals,
+        candidates,
+        market_environment,
+        portfolio_summary,
+        freshness_report,
+        backtest_summary,
+        position_advices,
+        thesis_reviews,
+        audit_result,
+    )
     messages = [
         (
             action_title,
-            render_action_report(
-                args.session,
-                report_day,
-                app_config,
-                signals,
-                candidates,
-                market_environment,
-                portfolio_summary,
-                freshness_report,
-                backtest_summary,
-                position_advices,
-            ),
+            action_markdown,
         ),
         (
             news_title,
@@ -172,6 +190,8 @@ def _run_report(args: argparse.Namespace) -> int:
         market_environment,
         portfolio_summary,
         alerts,
+        thesis_reviews,
+        audit_result,
     )
     _generate_dashboard_if_requested(args.dashboard_dir, report_day, args.session, ledger_json_path, archived_files, args.pages_enabled)
     _send_messages(messages, send=args.send, dry_run=args.dry_run)
@@ -192,9 +212,9 @@ def _run_weekend_news_report(args: argparse.Namespace, app_config, report_day: d
         for instrument, bars in watch_bars.items()
     ]
     portfolio_summary = build_portfolio_summary(signals)
-    quality_profiles = build_fund_quality_profiles(
+    quality_profiles = _build_quality_profiles(
+        "sample" if args.sample_data else app_config.data.provider,
         candidate_bars,
-        fetch_fund_quality_metadata(provider_name="sample" if args.sample_data else app_config.data.provider, instruments=list(candidate_bars.keys())),
     )
     candidates = rank_candidates(
         candidate_bars,
@@ -228,6 +248,8 @@ def _run_weekend_news_report(args: argparse.Namespace, app_config, report_day: d
         market_environment,
         portfolio_summary,
         [],
+        build_thesis_reviews(signals),
+        None,
     )
     _generate_dashboard_if_requested(args.dashboard_dir, report_day, args.session, ledger_json_path, archived_files, args.pages_enabled)
     _send_messages(messages, send=args.send, dry_run=args.dry_run)
@@ -257,6 +279,7 @@ def _run_fund_action_report(args: argparse.Namespace, app_config, report_day: da
     ]
     portfolio_summary = build_portfolio_summary(signals)
     position_advices = build_position_advices(signals, portfolio_summary, market_environment)
+    thesis_reviews = build_thesis_reviews(signals)
     proxy_bars = fetch_many(provider, build_proxy_instruments(signals), app_config.data.lookback_days, strict=False)
     intraday_estimates = build_fund_intraday_estimates(signals, proxy_bars, market_environment)
     alerts = build_alerts(signals, [], build_data_freshness(report_day, fund_watchlist, watch_bars), portfolio_summary)
@@ -267,6 +290,18 @@ def _run_fund_action_report(args: argparse.Namespace, app_config, report_day: da
         market_environment,
         intraday_estimates,
         position_advices,
+        thesis_reviews,
+    )
+    audit_result = audit_report(markdown, args.session)
+    markdown = render_fund_action_report(
+        report_day,
+        app_config,
+        signals,
+        market_environment,
+        intraday_estimates,
+        position_advices,
+        thesis_reviews,
+        audit_result,
     )
     messages = [("14:00基金操作提醒", markdown)]
     if alerts:
@@ -281,6 +316,8 @@ def _run_fund_action_report(args: argparse.Namespace, app_config, report_day: da
         market_environment,
         portfolio_summary,
         alerts,
+        thesis_reviews,
+        audit_result,
     )
     _generate_dashboard_if_requested(args.dashboard_dir, report_day, args.session, ledger_json_path, archived_files, args.pages_enabled)
     _send_messages(messages, send=args.send, dry_run=args.dry_run)
@@ -298,6 +335,21 @@ def _collect_news(app_config) -> list:
         app_config.news.keywords,
         max_items=app_config.news.max_items,
     )
+
+
+def _build_quality_profiles(provider_name: str, candidate_bars: dict) -> dict:
+    instruments = list(candidate_bars.keys())
+    profiles = build_fund_quality_profiles(
+        candidate_bars,
+        fetch_fund_quality_metadata(provider_name, instruments),
+    )
+    profiles.update(
+        build_fundamental_quality_profiles(
+            candidate_bars,
+            fetch_fundamental_quality_metadata(provider_name, instruments),
+        )
+    )
+    return profiles
 
 
 def _resolve_display_names(app_config, provider_name: str):
@@ -426,6 +478,8 @@ def _write_ledger_if_requested(
     market_environment,
     portfolio_summary,
     alerts,
+    thesis_reviews=None,
+    audit_result=None,
 ) -> Path | None:
     if not ledger_dir:
         return None
@@ -438,6 +492,8 @@ def _write_ledger_if_requested(
         market_environment,
         portfolio_summary,
         list(alerts),
+        thesis_reviews or {},
+        audit_result,
     )
     return Path(ledger_dir) / manifest["json"]
 

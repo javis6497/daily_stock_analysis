@@ -30,6 +30,9 @@ class Instrument:
     proxy_symbol: str | None = None
     proxy_name: str | None = None
     proxy_asset_type: str | None = None
+    thesis: str | None = None
+    thesis_risks: tuple[str, ...] = field(default_factory=tuple)
+    invalidation: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "symbol", str(self.symbol))
@@ -55,6 +58,12 @@ class Instrument:
             object.__setattr__(self, "proxy_name", str(self.proxy_name))
         if self.proxy_asset_type is not None:
             object.__setattr__(self, "proxy_asset_type", str(self.proxy_asset_type))
+        if self.thesis is not None:
+            object.__setattr__(self, "thesis", str(self.thesis))
+        if not isinstance(self.thesis_risks, tuple):
+            object.__setattr__(self, "thesis_risks", tuple(self.thesis_risks))
+        if self.invalidation is not None:
+            object.__setattr__(self, "invalidation", str(self.invalidation))
 
     def proxy_instrument(self) -> Instrument | None:
         if not self.proxy_symbol:
@@ -100,7 +109,7 @@ class CandidateScore:
     signal: Signal
     reasons: tuple[str, ...]
     group: str = "未分组"
-    quality_profile: FundQualityProfile | None = None
+    quality_profile: FundQualityProfile | FundamentalQualityProfile | None = None
 
 
 @dataclass(frozen=True)
@@ -120,6 +129,22 @@ class FundQualityProfile:
 
 
 @dataclass(frozen=True)
+class FundamentalQualityProfile:
+    instrument: Instrument
+    quality_score: float
+    roe: float | None = None
+    gross_margin: float | None = None
+    debt_ratio: float | None = None
+    operating_cashflow_ratio: float | None = None
+    pe: float | None = None
+    pb: float | None = None
+    dividend_yield: float | None = None
+    market_cap: float | None = None
+    turnover: float | None = None
+    reasons: tuple[str, ...] = field(default_factory=tuple)
+
+
+@dataclass(frozen=True)
 class PositionAdvice:
     instrument: Instrument
     current_weight: float | None
@@ -127,6 +152,13 @@ class PositionAdvice:
     suggested_max: float
     action: str
     reason: str
+
+
+@dataclass(frozen=True)
+class ThesisReview:
+    instrument: Instrument
+    status: str
+    note: str
 
 
 @dataclass(frozen=True)

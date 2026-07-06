@@ -56,6 +56,8 @@ def _render_html(payload: dict, report_files: list[dict[str, str]], pages_enable
     market = payload.get("market_environment") or {}
     portfolio = payload.get("portfolio_summary") or {}
     alerts = payload.get("alerts") or []
+    thesis_reviews = payload.get("thesis_reviews") or {}
+    report_audit = payload.get("report_audit") or {}
     publish_note = "" if pages_enabled else "<p class='warn'>Pages 发布默认关闭，避免公开仓库暴露持仓金额。</p>"
     return f"""<!doctype html>
 <html lang="zh-CN">
@@ -107,6 +109,14 @@ def _render_html(payload: dict, report_files: list[dict[str, str]], pages_enable
       {_alerts_list(alerts)}
     </section>
     <section>
+      <h2>持仓逻辑跟踪</h2>
+      {_thesis_reviews_table(thesis_reviews)}
+    </section>
+    <section>
+      <h2>报告质检</h2>
+      {_audit_panel(report_audit)}
+    </section>
+    <section>
       <h2>历史报告</h2>
       {_report_links(report_files)}
     </section>
@@ -147,15 +157,53 @@ def _candidates_table(candidates: list[dict]) -> str:
             f"<td>{_number(item.get('score'))}</td>"
             f"<td>{escape(str(item.get('group', '')))}</td>"
             f"<td>{_number(item.get('quality_score'))}</td>"
+            f"<td>{escape(str(item.get('quality_type') or ''))}</td>"
+            f"<td>{_number(item.get('pe'))} / {_number(item.get('pb'))}</td>"
             "</tr>"
         )
-    return "<table><thead><tr><th>名称</th><th>代码</th><th>评分</th><th>分组</th><th>质量分</th></tr></thead><tbody>" + "".join(rows) + "</tbody></table>"
+    return "<table><thead><tr><th>名称</th><th>代码</th><th>评分</th><th>分组</th><th>质量分</th><th>画像</th><th>PE/PB</th></tr></thead><tbody>" + "".join(rows) + "</tbody></table>"
 
 
 def _alerts_list(alerts: list[dict]) -> str:
     if not alerts:
         return "<p>暂无异常提醒。</p>"
     return "<ul>" + "".join(f"<li><strong>{escape(str(item.get('title', '')))}</strong>：{escape(str(item.get('message', '')))}</li>" for item in alerts) + "</ul>"
+
+
+def _thesis_reviews_table(thesis_reviews: dict) -> str:
+    if not thesis_reviews:
+        return "<p>暂无持仓逻辑配置。</p>"
+    rows = []
+    for symbol, item in thesis_reviews.items():
+        instrument = item.get("instrument") or {}
+        rows.append(
+            "<tr>"
+            f"<td>{escape(str(instrument.get('name') or ''))}</td>"
+            f"<td>{escape(str(symbol))}</td>"
+            f"<td>{escape(str(item.get('status') or ''))}</td>"
+            f"<td>{escape(str(instrument.get('thesis') or ''))}</td>"
+            f"<td>{escape(str(instrument.get('invalidation') or ''))}</td>"
+            f"<td>{escape(str(item.get('note') or ''))}</td>"
+            "</tr>"
+        )
+    return "<table><thead><tr><th>名称</th><th>代码</th><th>状态</th><th>持仓逻辑</th><th>失效条件</th><th>复核说明</th></tr></thead><tbody>" + "".join(rows) + "</tbody></table>"
+
+
+def _audit_panel(report_audit: dict) -> str:
+    if not report_audit:
+        return "<p>暂无报告质检结果。</p>"
+    items = report_audit.get("items") or []
+    lines = [
+        f"<p>状态：<strong>{escape(str(report_audit.get('status') or 'N/A'))}</strong>；问题数：{len(items)}</p>"
+    ]
+    if items:
+        lines.append("<ul>")
+        for item in items:
+            lines.append(
+                f"<li>[{escape(str(item.get('level') or ''))}] {escape(str(item.get('rule_id') or ''))}：{escape(str(item.get('message') or ''))}</li>"
+            )
+        lines.append("</ul>")
+    return "".join(lines)
 
 
 def _report_links(report_files: list[dict[str, str]]) -> str:

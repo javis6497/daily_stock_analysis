@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 
 from .indicators import max_drawdown, sma
-from .models import Bar, CandidateScore, FundQualityProfile, Instrument, MarketEnvironment
+from .models import Bar, CandidateScore, FundamentalQualityProfile, FundQualityProfile, Instrument, MarketEnvironment
 from .strategy import analyze_instrument
 
 
@@ -14,7 +14,7 @@ def rank_candidates(
     max_per_group: int = 2,
     max_single_day_pct: float = 0.07,
     market_environment: MarketEnvironment | None = None,
-    quality_profiles: Mapping[str, FundQualityProfile] | None = None,
+    quality_profiles: Mapping[str, FundQualityProfile | FundamentalQualityProfile] | None = None,
 ) -> list[CandidateScore]:
     quality_profiles = quality_profiles or {}
     scores: list[CandidateScore] = []
@@ -49,7 +49,8 @@ def rank_candidates(
         if market_environment is not None:
             reasons.append(f"市场环境 {market_environment.status}")
         if quality_profile is not None:
-            reasons.append(f"基金质量 {quality_profile.quality_score:.1f}")
+            label = "基本面质量" if isinstance(quality_profile, FundamentalQualityProfile) else "基金质量"
+            reasons.append(f"{label} {quality_profile.quality_score:.1f}")
         scores.append(
             CandidateScore(
                 instrument=instrument,
