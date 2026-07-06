@@ -12,10 +12,13 @@
 - 支持持仓成本、投入本金、目标仓位、最大仓位、风险等级、估算浮盈亏和基金名称自动补全。
 - 操作建议会显示市场环境、持仓级建议、距离风险位、距离止盈/减仓观察位。
 - 操作建议会生成组合总览、数据新鲜度检查和策略回测摘要。
-- 自选外候选池按趋势、风险、市场环境和行业/主题分散打分，推送 Top N 候选观察。
+- 自选外候选池按趋势、风险、市场环境、基金质量画像和行业/主题分散打分，推送 Top N 候选观察。
+- 14:00 基金操作提醒支持代理 ETF/指数的盘中估算，辅助 15:00 前人工决策。
+- 报告会输出目标仓位建议区间，并在仓位超限、跌破风险位、数据滞后时单独发送异常提醒。
+- 每次运行可生成结构化 JSON/CSV 信号台账和静态 HTML 看板。
 - 资讯摘要采用 AKShare 财经快讯源 + 规则过滤，不依赖 LLM。
 - 报告会在 GitHub Actions 中归档为 artifact，便于回看历史 Markdown。
-- GitHub Actions 支持北京时间工作日 08:30 盘前、14:00 基金操作提醒、16:30 盘后，以及周六/周日 09:30 周末量化周报；每个定时任务带 +15 分钟、+30 分钟兜底触发。
+- GitHub Actions 使用错峰时间触发：工作日 08:37/08:52/09:07/09:30 盘前，14:03/14:18/14:33 基金操作提醒，16:37/16:52/17:07 盘后；周六/周日 09:37/09:52/10:07 周末量化周报。
 - 工作日会拆成两条钉钉消息：操作建议一条，资讯摘要一条。
 - GitHub Actions 运行失败时会尝试发送钉钉失败通知，附带 Actions 运行链接。
 
@@ -25,7 +28,7 @@
 python -m pip install -r requirements.txt
 Copy-Item config/watchlist.example.yml config/watchlist.yml
 python -m stock_quant report --session premarket --config config/watchlist.yml --dry-run
-python -m stock_quant report --session premarket --config config/watchlist.yml --dry-run --archive-dir reports
+python -m stock_quant report --session premarket --config config/watchlist.yml --dry-run --archive-dir reports --ledger-dir reports/ledger --dashboard-dir site
 python -m stock_quant report --session fund_action --config config/watchlist.yml --dry-run
 python -m stock_quant report --session postmarket --config config/watchlist.yml --dry-run
 python -m stock_quant report --session weekend_news --config config/watchlist.yml --dry-run
@@ -60,10 +63,15 @@ watchlist:
     max_weight: 0.30
     risk_level: medium
     note: 核心基金
+    proxy_symbol: "510300"
+    proxy_name: 沪深300ETF
+    proxy_asset_type: etf
     tags: ["持仓", "基金"]
 ```
 
 `holding_amount` 建议填写累计投入本金。`target_weight` 和 `max_weight` 是组合目标仓位和上限仓位，用小数表示，例如 `0.20` 表示 20%。若基金名称仍是 `基金018044` 这类占位名，AKShare 可用时会尝试自动补全基金简称。
+
+`proxy_symbol` / `proxy_name` / `proxy_asset_type` 是可选字段，用于 14:00 基金操作提醒的盘中估算。场外基金当天净值通常晚间更新，配置一个相关 ETF 或指数后，系统会用代理标的当日可见涨跌给出粗略估算；未配置时会退化为市场环境估算。
 
 操作建议中的组合总览会基于 `holding_amount`、`cost_price` 和最新价格估算组合市值、总盈亏、持仓占比和超仓提醒。若未配置持仓金额，则只显示单标的信号。
 
@@ -95,6 +103,8 @@ recommendation:
 
 候选结果是“量化候选观察”，不是买入指令。
 
+基金/ETF 候选会生成基金质量画像：质量分、近 1/3/6/12 月收益、最大回撤，并在 AKShare 对应数据可用时补充基金规模、基金经理任期、费率、同类排名和重仓集中度。外部接口不可用时不会中断日报，只显示能从行情推导出的指标。
+
 市场环境默认使用上证指数、沪深300、创业板指、中证500 的趋势和回撤来判断“进攻 / 中性 / 防守”，并在报告中给出仓位倾向。若指数数据源临时不可用，报告会降级提示，不影响自选标的信号生成。
 
 资讯源默认使用 AKShare：
@@ -109,7 +119,17 @@ news:
   max_items: 8
 ```
 
-回测摘要使用当前已获取的历史行情做轻量评估，输出覆盖标的数、平均区间收益、最大回撤和信号成功率，作为策略稳定性的参考，不代表未来收益。
+回测摘要使用当前已获取的历史行情做轻量评估，输出覆盖标的数、平均区间收益、扣费后平均净收益、基准收益、平均超额、最大回撤和信号成功率。成本模型默认包含申购费、赎回费、双边滑点和调仓成本，可在配置里调整：
+
+```yaml
+backtest:
+  buy_fee_rate: 0.001
+  sell_fee_rate: 0.005
+  slippage_rate: 0.001
+  turnover_cost_rate: 0.001
+  benchmark_symbol: sh000300
+  benchmark_name: 沪深300
+```
 
 周末报告是“周末量化周报”：包含市场环境、本周持仓回顾、本周涨跌、本周最大回撤、月度复盘、自选外候选更新、相关资讯、风险事件日历和下周观察计划。周末报告不生成具体交易价位或即时卖出指令。
 
@@ -138,13 +158,21 @@ python -m stock_quant report --session premarket --config config/watchlist.yml -
 - 操作建议：市场环境、组合总览、数据新鲜度、回测摘要、自选标的信号、持仓成本/盈亏、持仓级建议、自选外候选观察。
 - 资讯摘要：相关新闻和摘要。
 
-工作日 `fund_action` 会在北京时间 14:00 单独发送一条基金操作提醒，只包含自选基金/ETF，不包含股票、资讯或自选外候选。
+工作日 `fund_action` 会在北京时间 14:03 开始发送基金操作提醒，只包含自选基金/ETF，不包含股票、资讯或自选外候选。若前一次未触发，14:18 和 14:33 会兜底尝试；同一天成功发送后会自动去重。
 
-为降低 GitHub Actions 定时任务漏触发的影响，四类自动任务都会在原时间后追加两个兜底触发点，并用“北京时间日期 + session”的缓存标记跳过重复发送。手动触发 `workflow_dispatch` 不走去重限制，方便测试。
+为降低 GitHub Actions 定时任务漏触发的影响，四类自动任务都会使用错峰触发点，并用“北京时间日期 + session”的缓存标记跳过重复发送。盘前额外有 09:30 补发检查；手动触发 `workflow_dispatch` 不走去重限制，方便测试。
 
 如果测试、数据获取或发送步骤失败，workflow 会尝试发送一条“量化日报任务失败”到钉钉，消息里包含本次 GitHub Actions 运行链接，便于直接定位失败步骤。
 
-每次成功生成报告后，workflow 会上传 `daily-quant-report-<session>-<date>` artifact，里面包含本次 Markdown 报告和 `manifest.json`。
+每次成功生成报告后，workflow 会上传 `daily-quant-report-<session>-<date>` artifact，里面包含本次 Markdown 报告、结构化 JSON/CSV 台账和 `manifest.json`。
+
+静态看板会生成到 `site/`。由于你的报告里包含持仓成本和金额，workflow 默认不会发布 GitHub Pages。确认仓库已改为私有，或你接受公开展示这些信息后，再到仓库 `Settings -> Secrets and variables -> Actions -> Variables` 添加：
+
+```text
+ENABLE_PAGES=true
+```
+
+开启后，workflow 会用 GitHub Pages 发布当前看板；未开启时看板只保存在 Actions 运行产物里。
 
 手动触发时可选择：
 

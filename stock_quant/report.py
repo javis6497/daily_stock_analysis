@@ -7,13 +7,16 @@ from .models import (
     BacktestSummary,
     CandidateScore,
     DataFreshnessReport,
+    FundIntradayEstimate,
     MarketEnvironment,
     MonthlyHoldingReview,
     PortfolioSummary,
+    PositionAdvice,
     Signal,
     WeeklyHoldingReview,
 )
 from .news import NewsItem
+from .alerts import Alert
 
 
 def render_report(
@@ -27,6 +30,7 @@ def render_report(
     portfolio_summary: PortfolioSummary | None = None,
     freshness_report: DataFreshnessReport | None = None,
     backtest_summary: BacktestSummary | None = None,
+    position_advices: dict[str, PositionAdvice] | None = None,
 ) -> str:
     return "\n\n---\n\n".join(
         [
@@ -40,6 +44,7 @@ def render_report(
                 portfolio_summary,
                 freshness_report,
                 backtest_summary,
+                position_advices,
             ),
             render_daily_news_report(session, report_date, config, news_items),
         ]
@@ -56,6 +61,7 @@ def render_action_report(
     portfolio_summary: PortfolioSummary | None = None,
     freshness_report: DataFreshnessReport | None = None,
     backtest_summary: BacktestSummary | None = None,
+    position_advices: dict[str, PositionAdvice] | None = None,
 ) -> str:
     title = "盘前量化日报" if session == "premarket" else "盘后量化复盘"
     lines = [
@@ -81,6 +87,7 @@ def render_action_report(
                     f"- 最新价：{signal.last_close:.4f}；MA20：{_fmt(signal.ma20)}；MA60：{_fmt(signal.ma60)}；RSI：{_fmt(signal.rsi)}",
                     _holding_line(signal),
                     _position_policy_line(signal),
+                    _target_position_advice_line(signal, position_advices),
                     _distance_line(signal),
                     _holding_advice_line(signal),
                     f"- 买入观察区：{signal.buy_zone.lower:.4f} - {signal.buy_zone.upper:.4f}",
@@ -102,6 +109,7 @@ def render_action_report(
                     f"{rank}. {candidate.instrument.name} ({candidate.instrument.symbol}) - 综合分 {candidate.score:.2f}",
                     f"   - 状态：{signal.status}；分组：{candidate.group}；观察区：{signal.buy_zone.lower:.4f} - {signal.buy_zone.upper:.4f}；风险位：{signal.stop_loss:.4f}",
                     f"   - 筛选理由：{'；'.join(candidate.reasons)}",
+                    _candidate_quality_line(candidate),
                 ]
             )
     else:
@@ -155,6 +163,8 @@ def render_fund_action_report(
     config: AppConfig,
     signals: list[Signal],
     market_environment: MarketEnvironment | None = None,
+    intraday_estimates: dict[str, FundIntradayEstimate] | None = None,
+    position_advices: dict[str, PositionAdvice] | None = None,
 ) -> str:
     fund_signals = [
         signal
@@ -166,7 +176,7 @@ def render_fund_action_report(
         "",
         "- 推送口径：仅自选基金/ETF操作信号，不含股票、不含资讯、不含自选外候选。",
         "- 时间目的：基金通常需在 15:00 前确认申购/赎回，14:00 提前给出量化观察。",
-        "- 数据口径：基于当前可用最新净值/行情，场外基金净值可能存在 T 日更新滞后。",
+        "- 数据口径：基于当前可用最新净值/行情；如配置代理 ETF/指数，会显示 14:00 盘中估算。",
         "",
     ]
     lines.extend(_market_environment_lines(market_environment))
@@ -180,8 +190,10 @@ def render_fund_action_report(
                     f"### {instrument.name} ({instrument.symbol})",
                     f"- 状态：{signal.status}；动作：{signal.action}；置信度：{signal.confidence:.0%}",
                     f"- 最新价/净值：{signal.last_close:.4f}；MA20：{_fmt(signal.ma20)}；MA60：{_fmt(signal.ma60)}；RSI：{_fmt(signal.rsi)}",
+                    _intraday_estimate_line(signal, intraday_estimates),
                     _holding_line(signal),
                     _position_policy_line(signal),
+                    _target_position_advice_line(signal, position_advices),
                     _distance_line(signal),
                     _holding_advice_line(signal),
                     f"- 买入观察区：{signal.buy_zone.lower:.4f} - {signal.buy_zone.upper:.4f}",
@@ -211,6 +223,7 @@ def render_weekend_news_report(
     monthly_reviews: list[MonthlyHoldingReview] | None = None,
     candidates: list[CandidateScore] | None = None,
     market_environment: MarketEnvironment | None = None,
+    portfolio_summary: PortfolioSummary | None = None,
 ) -> str:
     weekly_reviews = weekly_reviews or []
     monthly_reviews = monthly_reviews or []
@@ -223,6 +236,7 @@ def render_weekend_news_report(
         "",
     ]
     lines.extend(_market_environment_lines(market_environment))
+    lines.extend(["", *_weekend_portfolio_summary_lines(portfolio_summary, weekly_reviews, monthly_reviews)])
     lines.extend(["", "## 本周持仓回顾"])
     if weekly_reviews:
         for review in weekly_reviews:
@@ -315,6 +329,34 @@ def render_failure_report(
     return "\n".join(lines)
 
 
+def render_alert_report(
+    report_date: date,
+    session: str,
+    alerts: list[Alert],
+) -> str:
+    lines = [
+        f"# 异常提醒 - {report_date.isoformat()}",
+        "",
+        f"- 关联任务：{session}",
+        "- 推送口径：仅在触发风险位、止盈位、仓位超限或数据异常时发送。",
+        "",
+        "## 触发事项",
+    ]
+    if alerts:
+        for alert in alerts:
+            lines.append(f"- [{alert.level}] {alert.title}：{alert.message}")
+    else:
+        lines.append("- 暂无异常。")
+    lines.extend(
+        [
+            "",
+            "## 免责声明",
+            "本提醒仅为量化研究信号和风险提示，不自动交易，不构成保证收益或个人投顾建议。任何操作需自行判断并控制仓位风险。",
+        ]
+    )
+    return "\n".join(lines)
+
+
 def _market_environment_lines(market_environment: MarketEnvironment | None) -> list[str]:
     if market_environment is None:
         return [
@@ -387,6 +429,9 @@ def _backtest_summary_lines(backtest_summary: BacktestSummary | None) -> list[st
         [
             f"- 覆盖标的：{backtest_summary.instrument_count}",
             f"- 平均区间收益：{backtest_summary.average_period_return:.2%}",
+            f"- 扣费后平均净收益：{_pct(backtest_summary.average_net_return)}",
+            f"- 基准收益：{_pct(backtest_summary.benchmark_return)}；平均超额：{_pct(backtest_summary.average_excess_return)}",
+            f"- 估算交易成本：{_pct(backtest_summary.estimated_cost_rate)}",
             f"- 最大回撤：{backtest_summary.max_drawdown:.2%}",
             f"- 信号成功率：{backtest_summary.signal_success_rate:.2%}",
             f"- 结论：{backtest_summary.summary}",
@@ -442,6 +487,56 @@ def _position_policy_line(signal: Signal) -> str | None:
     return "- " + "；".join(parts)
 
 
+def _target_position_advice_line(
+    signal: Signal,
+    advices: dict[str, PositionAdvice] | None,
+) -> str | None:
+    if not advices:
+        return None
+    advice = advices.get(signal.instrument.symbol)
+    if advice is None:
+        return None
+    current = "N/A" if advice.current_weight is None else f"{advice.current_weight:.0%}"
+    return (
+        f"- 建议仓位区间：{advice.suggested_min:.0%} - {advice.suggested_max:.0%}；"
+        f"当前占比：{current}；动作：{advice.action}；依据：{advice.reason}"
+    )
+
+
+def _intraday_estimate_line(
+    signal: Signal,
+    estimates: dict[str, FundIntradayEstimate] | None,
+) -> str | None:
+    if not estimates:
+        return None
+    estimate = estimates.get(signal.instrument.symbol)
+    if estimate is None:
+        return None
+    proxy = "无代理标的" if not estimate.proxy_symbol else f"{estimate.proxy_name}({estimate.proxy_symbol})"
+    return f"- 14:00盘中估算：{_pct(estimate.estimated_pct)}；代理：{proxy}；说明：{estimate.note}"
+
+
+def _candidate_quality_line(candidate: CandidateScore) -> str | None:
+    profile = candidate.quality_profile
+    if profile is None:
+        return None
+    parts = [
+        f"质量分 {profile.quality_score:.1f}",
+        f"近1月 {_pct(profile.return_1m)}",
+        f"近3月 {_pct(profile.return_3m)}",
+        f"最大回撤 {_pct(profile.max_drawdown)}",
+    ]
+    if profile.fund_size is not None:
+        parts.append(f"规模 {profile.fund_size / 100_000_000:.1f}亿")
+    if profile.manager_tenure_days is not None:
+        parts.append(f"经理任期 {profile.manager_tenure_days}天")
+    if profile.fee_rate is not None:
+        parts.append(f"费率 {_pct(profile.fee_rate)}")
+    if profile.holding_concentration is not None:
+        parts.append(f"重仓集中度 {_pct(profile.holding_concentration)}")
+    return f"   - 基金质量画像：{'；'.join(parts)}"
+
+
 def _distance_line(signal: Signal) -> str:
     risk_distance = None
     if signal.stop_loss > 0:
@@ -469,6 +564,32 @@ def _holding_advice(signal: Signal) -> str:
     if signal.status == "偏强":
         return "趋势偏强，已有仓位可继续持有，回踩到观察区再考虑分批加仓。"
     return "信号尚未确认，维持轻仓观察，等待量价或均线重新确认。"
+
+
+def _weekend_portfolio_summary_lines(
+    portfolio_summary: PortfolioSummary | None,
+    weekly_reviews: list[WeeklyHoldingReview],
+    monthly_reviews: list[MonthlyHoldingReview],
+) -> list[str]:
+    lines = ["## 组合周/月总结"]
+    if portfolio_summary is not None and portfolio_summary.total_principal > 0:
+        lines.extend(
+            [
+                f"- 组合估算市值：{portfolio_summary.total_market_value:.2f}",
+                f"- 组合估算总盈亏：{portfolio_summary.total_pnl_pct:.2%}（{portfolio_summary.total_pnl_amount:.2f}）",
+            ]
+        )
+    if weekly_reviews:
+        best_week = max(weekly_reviews, key=lambda item: item.weekly_change if item.weekly_change is not None else -999)
+        worst_week = min(weekly_reviews, key=lambda item: item.weekly_change if item.weekly_change is not None else 999)
+        lines.append(f"- 本周表现最好：{best_week.instrument.name} {_pct(best_week.weekly_change)}")
+        lines.append(f"- 本周风险最高：{worst_week.instrument.name}，本周回撤 {_pct(worst_week.weekly_drawdown)}")
+    if monthly_reviews:
+        best_month = max(monthly_reviews, key=lambda item: item.monthly_change if item.monthly_change is not None else -999)
+        lines.append(f"- 近30日表现最好：{best_month.instrument.name} {_pct(best_month.monthly_change)}")
+    if len(lines) == 1:
+        lines.append("- 暂无足够持仓数据生成组合总结。")
+    return lines
 
 
 def _next_week_focus(signal: Signal) -> str:

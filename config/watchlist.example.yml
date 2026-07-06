@@ -29,6 +29,14 @@ recommendation:
   max_candidate_single_day_pct: 0.07
   max_candidates_per_group: 2
 
+backtest:
+  buy_fee_rate: 0.001
+  sell_fee_rate: 0.005
+  slippage_rate: 0.001
+  turnover_cost_rate: 0.001
+  benchmark_symbol: sh000300
+  benchmark_name: 沪深300
+
 notify:
   channel: dingtalk
 
@@ -62,6 +70,9 @@ watchlist:
     max_weight: 0.25
     risk_level: low
     note: 宽基底仓
+    proxy_symbol: "510300"
+    proxy_name: 沪深300ETF
+    proxy_asset_type: etf
     tags: ["宽基", "基金"]
 
 candidate_pool:

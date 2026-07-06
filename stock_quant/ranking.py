@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 
 from .indicators import max_drawdown, sma
-from .models import Bar, CandidateScore, Instrument, MarketEnvironment
+from .models import Bar, CandidateScore, FundQualityProfile, Instrument, MarketEnvironment
 from .strategy import analyze_instrument
 
 
@@ -14,7 +14,9 @@ def rank_candidates(
     max_per_group: int = 2,
     max_single_day_pct: float = 0.07,
     market_environment: MarketEnvironment | None = None,
+    quality_profiles: Mapping[str, FundQualityProfile] | None = None,
 ) -> list[CandidateScore]:
+    quality_profiles = quality_profiles or {}
     scores: list[CandidateScore] = []
     for instrument, bars in bars_by_instrument.items():
         if not bars:
@@ -30,7 +32,11 @@ def rank_candidates(
         status_base = {"偏强": 70.0, "观察": 45.0, "偏弱": 18.0}.get(signal.status, 35.0)
         fund_bonus = 4.0 if instrument.asset_type in {"etf", "fund"} else 0.0
         market_adjustment = _market_adjustment(instrument, market_environment)
-        score = max(0.0, status_base + trend_bonus + fund_bonus + market_adjustment - drawdown_penalty)
+        quality_profile = quality_profiles.get(instrument.symbol)
+        quality_bonus = 0.0
+        if quality_profile is not None:
+            quality_bonus = (quality_profile.quality_score - 50.0) * 0.12
+        score = max(0.0, status_base + trend_bonus + fund_bonus + market_adjustment + quality_bonus - drawdown_penalty)
         group = candidate_group(instrument)
         reasons = [
             f"状态 {signal.status}",
@@ -42,6 +48,8 @@ def rank_candidates(
             reasons.append(f"单日涨跌 {single_day_pct:.2%}")
         if market_environment is not None:
             reasons.append(f"市场环境 {market_environment.status}")
+        if quality_profile is not None:
+            reasons.append(f"基金质量 {quality_profile.quality_score:.1f}")
         scores.append(
             CandidateScore(
                 instrument=instrument,
@@ -49,6 +57,7 @@ def rank_candidates(
                 signal=signal,
                 reasons=tuple(reasons),
                 group=group,
+                quality_profile=quality_profile,
             )
         )
 

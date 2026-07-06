@@ -57,6 +57,16 @@ class RecommendationConfig:
 
 
 @dataclass(frozen=True)
+class BacktestConfig:
+    buy_fee_rate: float = 0.001
+    sell_fee_rate: float = 0.005
+    slippage_rate: float = 0.001
+    turnover_cost_rate: float = 0.001
+    benchmark_symbol: str = "sh000300"
+    benchmark_name: str = "沪深300"
+
+
+@dataclass(frozen=True)
 class AppConfig:
     timezone: str = "Asia/Shanghai"
     data: DataConfig = field(default_factory=DataConfig)
@@ -64,6 +74,7 @@ class AppConfig:
     notify: NotifyConfig = field(default_factory=NotifyConfig)
     news: NewsConfig = field(default_factory=NewsConfig)
     recommendation: RecommendationConfig = field(default_factory=RecommendationConfig)
+    backtest: BacktestConfig = field(default_factory=BacktestConfig)
     watchlist: list[Instrument] = field(default_factory=list)
     candidate_pool: list[Instrument] = field(default_factory=list)
 
@@ -83,6 +94,7 @@ def load_config(path: str | Path) -> AppConfig:
     notify_raw = raw.get("notify", {}) or {}
     news_raw = raw.get("news", {}) or {}
     recommendation_raw = raw.get("recommendation", {}) or {}
+    backtest_raw = raw.get("backtest", {}) or {}
 
     return AppConfig(
         timezone=str(raw.get("timezone", "Asia/Shanghai")),
@@ -121,6 +133,14 @@ def load_config(path: str | Path) -> AppConfig:
             max_candidate_single_day_pct=float(recommendation_raw.get("max_candidate_single_day_pct", 0.07)),
             max_candidates_per_group=int(recommendation_raw.get("max_candidates_per_group", 2)),
         ),
+        backtest=BacktestConfig(
+            buy_fee_rate=float(backtest_raw.get("buy_fee_rate", 0.001)),
+            sell_fee_rate=float(backtest_raw.get("sell_fee_rate", 0.005)),
+            slippage_rate=float(backtest_raw.get("slippage_rate", 0.001)),
+            turnover_cost_rate=float(backtest_raw.get("turnover_cost_rate", 0.001)),
+            benchmark_symbol=str(backtest_raw.get("benchmark_symbol", "sh000300")),
+            benchmark_name=str(backtest_raw.get("benchmark_name", "沪深300")),
+        ),
         watchlist=watchlist,
         candidate_pool=[_parse_instrument(item) for item in raw.get("candidate_pool", [])],
     )
@@ -147,6 +167,9 @@ def _parse_instrument(raw: dict[str, Any]) -> Instrument:
         max_weight=_optional_float(raw.get("max_weight")),
         risk_level=_optional_str(raw.get("risk_level")),
         note=_optional_str(raw.get("note")),
+        proxy_symbol=_optional_str(raw.get("proxy_symbol")),
+        proxy_name=_optional_str(raw.get("proxy_name")),
+        proxy_asset_type=_optional_str(raw.get("proxy_asset_type")),
     )
 
 

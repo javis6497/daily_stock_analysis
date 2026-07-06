@@ -27,6 +27,9 @@ class Instrument:
     max_weight: float | None = None
     risk_level: str | None = None
     note: str | None = None
+    proxy_symbol: str | None = None
+    proxy_name: str | None = None
+    proxy_asset_type: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "symbol", str(self.symbol))
@@ -46,6 +49,23 @@ class Instrument:
             object.__setattr__(self, "risk_level", str(self.risk_level))
         if self.note is not None:
             object.__setattr__(self, "note", str(self.note))
+        if self.proxy_symbol is not None:
+            object.__setattr__(self, "proxy_symbol", str(self.proxy_symbol))
+        if self.proxy_name is not None:
+            object.__setattr__(self, "proxy_name", str(self.proxy_name))
+        if self.proxy_asset_type is not None:
+            object.__setattr__(self, "proxy_asset_type", str(self.proxy_asset_type))
+
+    def proxy_instrument(self) -> Instrument | None:
+        if not self.proxy_symbol:
+            return None
+        return Instrument(
+            symbol=self.proxy_symbol,
+            name=self.proxy_name or f"代理{self.proxy_symbol}",
+            market=self.market,
+            asset_type=self.proxy_asset_type or "etf",
+            tags=("基金代理", *self.tags),
+        )
 
 
 @dataclass(frozen=True)
@@ -80,6 +100,42 @@ class CandidateScore:
     signal: Signal
     reasons: tuple[str, ...]
     group: str = "未分组"
+    quality_profile: FundQualityProfile | None = None
+
+
+@dataclass(frozen=True)
+class FundQualityProfile:
+    instrument: Instrument
+    quality_score: float
+    fund_size: float | None = None
+    manager_tenure_days: int | None = None
+    category_rank: str | None = None
+    fee_rate: float | None = None
+    holding_concentration: float | None = None
+    return_1m: float | None = None
+    return_3m: float | None = None
+    return_6m: float | None = None
+    return_12m: float | None = None
+    max_drawdown: float | None = None
+
+
+@dataclass(frozen=True)
+class PositionAdvice:
+    instrument: Instrument
+    current_weight: float | None
+    suggested_min: float
+    suggested_max: float
+    action: str
+    reason: str
+
+
+@dataclass(frozen=True)
+class FundIntradayEstimate:
+    instrument: Instrument
+    proxy_symbol: str | None
+    proxy_name: str | None
+    estimated_pct: float | None
+    note: str
 
 
 @dataclass(frozen=True)
@@ -157,6 +213,10 @@ class BacktestSummary:
     max_drawdown: float
     signal_success_rate: float
     summary: str
+    average_net_return: float | None = None
+    benchmark_return: float | None = None
+    average_excess_return: float | None = None
+    estimated_cost_rate: float | None = None
 
 
 @dataclass(frozen=True)

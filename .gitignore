@@ -12,3 +12,5 @@ dist/
 build/
 *.egg-info/
 config/watchlist.yml
+.tmp_reports/
+.tmp_site/

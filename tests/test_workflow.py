@@ -12,24 +12,25 @@ def test_workflow_schedules_redundant_windows_for_all_sessions():
 
     expected = {
         "premarket": (
-            "30 0 * * 1-5",
-            "45 0 * * 1-5",
-            "0 1 * * 1-5",
+            "37 0 * * 1-5",
+            "52 0 * * 1-5",
+            "7 1 * * 1-5",
+            "30 1 * * 1-5",
         ),
         "fund_action": (
-            "0 6 * * 1-5",
-            "15 6 * * 1-5",
-            "30 6 * * 1-5",
+            "3 6 * * 1-5",
+            "18 6 * * 1-5",
+            "33 6 * * 1-5",
         ),
         "postmarket": (
-            "30 8 * * 1-5",
-            "45 8 * * 1-5",
-            "0 9 * * 1-5",
+            "37 8 * * 1-5",
+            "52 8 * * 1-5",
+            "7 9 * * 1-5",
         ),
         "weekend_news": (
-            "30 1 * * 6,0",
-            "45 1 * * 6,0",
-            "0 2 * * 6,0",
+            "37 1 * * 6,0",
+            "52 1 * * 6,0",
+            "7 2 * * 6,0",
         ),
     }
 
@@ -68,5 +69,27 @@ def test_workflow_archives_generated_reports_as_artifact():
     workflow = _workflow_text()
 
     assert "--archive-dir reports" in workflow
+    assert "--ledger-dir reports/ledger" in workflow
+    assert "--dashboard-dir site" in workflow
     assert "actions/upload-artifact@v4" in workflow
+    assert "path: |\n            reports\n            site" in workflow
     assert "daily-quant-report-${{ env.SESSION }}-${{ env.REPORT_DATE }}" in workflow
+
+
+def test_workflow_restores_and_saves_dashboard_history_cache():
+    workflow = _workflow_text()
+
+    assert "Restore dashboard history" in workflow
+    assert "Save dashboard history" in workflow
+    assert "dashboard-site-${{ env.REPORT_DATE }}-${{ env.SESSION }}-${{ github.run_id }}" in workflow
+    assert "restore-keys: dashboard-site-" in workflow
+
+
+def test_workflow_pages_publish_is_guarded_by_explicit_variable():
+    workflow = _workflow_text()
+
+    assert "ENABLE_PAGES" in workflow
+    assert "vars.ENABLE_PAGES == 'true'" in workflow
+    assert "actions/configure-pages@v5" in workflow
+    assert "actions/upload-pages-artifact@v3" in workflow
+    assert "actions/deploy-pages@v4" in workflow
