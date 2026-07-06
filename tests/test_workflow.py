@@ -12,25 +12,25 @@ def test_workflow_schedules_redundant_windows_for_all_sessions():
 
     expected = {
         "premarket": (
-            "37 0 * * 1-5",
-            "52 0 * * 1-5",
-            "7 1 * * 1-5",
-            "30 1 * * 1-5",
+            "41 0 * * 1-5",
+            "58 0 * * 1-5",
+            "13 1 * * 1-5",
+            "47 1 * * 1-5",
         ),
         "fund_action": (
-            "3 6 * * 1-5",
-            "18 6 * * 1-5",
-            "33 6 * * 1-5",
+            "11 6 * * 1-5",
+            "26 6 * * 1-5",
+            "44 6 * * 1-5",
         ),
         "postmarket": (
-            "37 8 * * 1-5",
-            "52 8 * * 1-5",
-            "7 9 * * 1-5",
+            "41 8 * * 1-5",
+            "58 8 * * 1-5",
+            "13 9 * * 1-5",
         ),
         "weekend_news": (
-            "37 1 * * 6,0",
-            "52 1 * * 6,0",
-            "7 2 * * 6,0",
+            "41 1 * * 6,0",
+            "58 1 * * 6,0",
+            "13 2 * * 6,0",
         ),
     }
 
@@ -39,6 +39,17 @@ def test_workflow_schedules_redundant_windows_for_all_sessions():
             assert f'cron: "{cron}"' in workflow
             assert f'github.event.schedule }}}}" = "{cron}"' in workflow
         assert f"SESSION={session}" in workflow
+
+
+def test_workflow_schedule_minutes_avoid_common_peak_slots():
+    workflow = _workflow_text()
+    peak_minutes = {0, 1, 2, 3, 4, 5, 15, 30, 45}
+    cron_lines = [line.strip() for line in workflow.splitlines() if line.strip().startswith("- cron:")]
+
+    assert cron_lines
+    for line in cron_lines:
+        minute = int(line.split('"', 2)[1].split(" ", 1)[0])
+        assert minute not in peak_minutes
 
 
 def test_workflow_skips_duplicate_scheduled_session_with_daily_cache_marker():
