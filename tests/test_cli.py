@@ -97,7 +97,7 @@ watchlist:
     markdown_files = list(archive_dir.glob("*.md"))
     assert markdown_files
     assert (archive_dir / "manifest.json").exists()
-    assert "盘前量化日报" in markdown_files[0].read_text(encoding="utf-8")
+    assert any("盘前量化日报" in path.read_text(encoding="utf-8") for path in markdown_files)
 
 
 def test_cli_weekend_news_dry_run_generates_news_only_report(tmp_path):
