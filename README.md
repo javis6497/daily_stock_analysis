@@ -61,6 +61,9 @@ watchlist:
     asset_type: fund
     cost_price: 2.0000
     holding_amount: 10000
+    market_value: 11000
+    holding_pnl_amount: 1000
+    holding_pnl_pct: 0.10
     target_weight: 0.20
     max_weight: 0.30
     risk_level: medium
@@ -76,13 +79,13 @@ watchlist:
     tags: ["持仓", "基金"]
 ```
 
-`holding_amount` 建议填写累计投入本金。`target_weight` 和 `max_weight` 是组合目标仓位和上限仓位，用小数表示，例如 `0.20` 表示 20%。若基金名称仍是 `基金018044` 这类占位名，AKShare 可用时会尝试自动补全基金简称。
+`holding_amount` 建议填写累计投入本金。若你只有券商/基金 App 截图，也可以填写 `market_value`（当前市值）、`holding_pnl_amount`（持有盈亏金额）和 `holding_pnl_pct`（持有收益率，小数形式）。系统会优先使用截图字段生成组合市值、盈亏和持仓占比，并在缺少 `cost_price` 时按“最新净值 / (1 + 持有收益率)”反推成本净值。`target_weight` 和 `max_weight` 是组合目标仓位和上限仓位，用小数表示，例如 `0.20` 表示 20%。若基金名称仍是 `基金018044` 这类占位名，AKShare 可用时会尝试自动补全基金简称。
 
 `thesis` / `thesis_risks` / `invalidation` 是可选的持仓逻辑字段，用来记录“为什么持有、主要担心什么、什么情况下原逻辑失效”。日报和 14:00 基金提醒会根据最新信号输出持仓逻辑跟踪；若跌破风险位或信号转弱，会标记为“逻辑漂移”，但仍只作为人工复核提示，不会自动交易。
 
 `proxy_symbol` / `proxy_name` / `proxy_asset_type` 是可选字段，用于 14:00 基金操作提醒的盘中估算。场外基金当天净值通常晚间更新，配置一个相关 ETF 或指数后，系统会用代理标的当日可见涨跌给出粗略估算；未配置时会退化为市场环境估算。
 
-操作建议中的组合总览会基于 `holding_amount`、`cost_price` 和最新价格估算组合市值、总盈亏、持仓占比和超仓提醒。若未配置持仓金额，则只显示单标的信号。
+操作建议中的组合总览会基于 `market_value` / `holding_pnl_amount` / `holding_pnl_pct` 或 `holding_amount` / `cost_price` 估算组合市值、总盈亏、持仓占比和超仓提醒。若未配置持仓金额或截图市值，则只显示单标的信号。
 
 数据新鲜度会显示最新行情日期、滞后标的和获取失败标的。场外基金净值可能有 T 日更新滞后，报告会把这类情况标出，避免用过期净值误判。
 

@@ -23,6 +23,9 @@ class Instrument:
     tags: tuple[str, ...] = field(default_factory=tuple)
     cost_price: float | None = None
     holding_amount: float | None = None
+    market_value: float | None = None
+    holding_pnl_amount: float | None = None
+    holding_pnl_pct: float | None = None
     target_weight: float | None = None
     max_weight: float | None = None
     risk_level: str | None = None
@@ -44,6 +47,12 @@ class Instrument:
             object.__setattr__(self, "cost_price", float(self.cost_price))
         if self.holding_amount is not None:
             object.__setattr__(self, "holding_amount", float(self.holding_amount))
+        if self.market_value is not None:
+            object.__setattr__(self, "market_value", float(self.market_value))
+        if self.holding_pnl_amount is not None:
+            object.__setattr__(self, "holding_pnl_amount", float(self.holding_pnl_amount))
+        if self.holding_pnl_pct is not None:
+            object.__setattr__(self, "holding_pnl_pct", float(self.holding_pnl_pct))
         if self.target_weight is not None:
             object.__setattr__(self, "target_weight", float(self.target_weight))
         if self.max_weight is not None:

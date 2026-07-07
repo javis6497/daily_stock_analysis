@@ -9,6 +9,7 @@ from typing import Any
 
 from .alerts import Alert
 from .models import CandidateScore, MarketEnvironment, PortfolioSummary, Signal, ThesisReview
+from .portfolio import build_portfolio_position, implied_cost_price
 from .report_audit import ReportAuditResult
 
 
@@ -54,9 +55,13 @@ def write_signal_ledger(
 
 def _signal_row(signal: Signal) -> dict[str, Any]:
     instrument = signal.instrument
+    position = build_portfolio_position(signal)
     pnl_pct = None
     pnl_amount = None
-    if instrument.cost_price and instrument.cost_price > 0:
+    if position is not None:
+        pnl_pct = position.pnl_pct
+        pnl_amount = position.pnl_amount
+    elif instrument.cost_price and instrument.cost_price > 0:
         pnl_pct = signal.last_close / instrument.cost_price - 1
         if instrument.holding_amount is not None:
             pnl_amount = instrument.holding_amount * pnl_pct
@@ -69,7 +74,13 @@ def _signal_row(signal: Signal) -> dict[str, Any]:
         "confidence": signal.confidence,
         "last_close": signal.last_close,
         "cost_price": instrument.cost_price,
+        "implied_cost_price": implied_cost_price(signal),
         "holding_amount": instrument.holding_amount,
+        "market_value": instrument.market_value,
+        "holding_pnl_amount": instrument.holding_pnl_amount,
+        "holding_pnl_pct": instrument.holding_pnl_pct,
+        "position_principal": None if position is None else position.principal,
+        "position_market_value": None if position is None else position.market_value,
         "thesis": instrument.thesis,
         "invalidation": instrument.invalidation,
         "thesis_risks": "；".join(instrument.thesis_risks),

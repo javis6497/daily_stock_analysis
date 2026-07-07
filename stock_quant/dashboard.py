@@ -136,13 +136,15 @@ def _signals_table(signals: list[dict]) -> str:
             f"<td>{escape(str(item.get('name', '')))}</td>"
             f"<td>{escape(str(item.get('symbol', '')))}</td>"
             f"<td>{escape(str(item.get('status', '')))}</td>"
-            f"<td>{_money(item.get('holding_amount'))}</td>"
+            f"<td>{_money(item.get('position_principal') or item.get('holding_amount'))}</td>"
+            f"<td>{_money(item.get('position_market_value') or item.get('market_value'))}</td>"
             f"<td>{_pct(item.get('pnl_pct'))}</td>"
+            f"<td>{_money(item.get('pnl_amount'))}</td>"
             f"<td>{_number(item.get('stop_loss'))}</td>"
             f"<td>{_number(item.get('take_profit'))}</td>"
             "</tr>"
         )
-    return "<table><thead><tr><th>名称</th><th>代码</th><th>状态</th><th>本金</th><th>盈亏</th><th>风险位</th><th>止盈位</th></tr></thead><tbody>" + "".join(rows) + "</tbody></table>"
+    return "<table><thead><tr><th>名称</th><th>代码</th><th>状态</th><th>本金</th><th>市值</th><th>盈亏</th><th>盈亏金额</th><th>风险位</th><th>止盈位</th></tr></thead><tbody>" + "".join(rows) + "</tbody></table>"
 
 
 def _candidates_table(candidates: list[dict]) -> str:

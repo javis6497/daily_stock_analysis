@@ -55,6 +55,9 @@ watchlist:
     asset_type: stock
     cost_price: 10.50
     holding_amount: 12000
+    market_value: 12600
+    holding_pnl_amount: 600
+    holding_pnl_pct: 0.05
     target_weight: 0.20
     max_weight: 0.30
     risk_level: medium

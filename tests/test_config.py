@@ -88,3 +88,28 @@ def test_load_config_rejects_empty_watchlist(tmp_path):
         assert "watchlist" in str(exc)
     else:
         raise AssertionError("empty watchlist should be rejected")
+
+
+def test_load_config_parses_broker_snapshot_fields(tmp_path):
+    config_mod = require_module("stock_quant.config")
+    config_path = tmp_path / "watchlist.yml"
+    config_path.write_text(
+        """
+watchlist:
+  - symbol: "018044"
+    name: "Tianhong Nasdaq 100 C"
+    market: cn
+    asset_type: fund
+    market_value: 765.45
+    holding_pnl_amount: -4.55
+    holding_pnl_pct: -0.0059
+""",
+        encoding="utf-8",
+    )
+
+    app_config = config_mod.load_config(config_path)
+    instrument = app_config.watchlist[0]
+
+    assert instrument.market_value == 765.45
+    assert instrument.holding_pnl_amount == -4.55
+    assert instrument.holding_pnl_pct == -0.0059

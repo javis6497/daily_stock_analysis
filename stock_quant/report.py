@@ -18,6 +18,7 @@ from .models import (
 )
 from .news import NewsItem
 from .alerts import Alert
+from .portfolio import build_portfolio_position, implied_cost_price
 from .report_audit import ReportAuditResult, render_audit_summary
 
 
@@ -503,6 +504,16 @@ def _pct(value: float | None) -> str:
 def _holding_line(signal: Signal) -> str | None:
     instrument = signal.instrument
     parts: list[str] = []
+    cost_price = implied_cost_price(signal)
+    position = build_portfolio_position(signal)
+    if cost_price is not None:
+        parts.append(f"持仓成本：{cost_price:.4f}")
+    if position is not None:
+        parts.append(f"投入本金：{position.principal:.2f}")
+        parts.append(f"当前市值：{position.market_value:.2f}")
+        parts.append(f"估算盈亏：{position.pnl_pct:.2%}（{position.pnl_amount:.2f}）")
+    if parts:
+        return "- " + "；".join(parts)
     if instrument.cost_price is not None:
         parts.append(f"持仓成本：{instrument.cost_price:.4f}")
     if instrument.holding_amount is not None:
