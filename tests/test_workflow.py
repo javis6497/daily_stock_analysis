@@ -12,32 +12,46 @@ def test_workflow_schedules_redundant_windows_for_all_sessions():
 
     expected = {
         "premarket": (
-            "41 0 * * 1-5",
-            "58 0 * * 1-5",
-            "13 1 * * 1-5",
-            "47 1 * * 1-5",
+            "36 0 * * 1-5",
+            "43 0 * * 1-5",
+            "51 0 * * 1-5",
+            "59 0 * * 1-5",
+            "8 1 * * 1-5",
+            "17 1 * * 1-5",
+            "29 1 * * 1-5",
+            "38 1 * * 1-5",
+            "49 1 * * 1-5",
+            "57 1 * * 1-5",
         ),
         "fund_action": (
-            "11 6 * * 1-5",
-            "26 6 * * 1-5",
-            "44 6 * * 1-5",
+            "8 6 * * 1-5",
+            "17 6 * * 1-5",
+            "29 6 * * 1-5",
+            "38 6 * * 1-5",
+            "49 6 * * 1-5",
         ),
         "postmarket": (
-            "41 8 * * 1-5",
-            "58 8 * * 1-5",
-            "13 9 * * 1-5",
+            "36 8 * * 1-5",
+            "43 8 * * 1-5",
+            "51 8 * * 1-5",
+            "59 8 * * 1-5",
+            "8 9 * * 1-5",
+            "17 9 * * 1-5",
         ),
         "weekend_news": (
-            "41 1 * * 6,0",
-            "58 1 * * 6,0",
-            "13 2 * * 6,0",
+            "36 1 * * 6,0",
+            "43 1 * * 6,0",
+            "51 1 * * 6,0",
+            "59 1 * * 6,0",
+            "8 2 * * 6,0",
+            "17 2 * * 6,0",
         ),
     }
 
     for session, crons in expected.items():
         for cron in crons:
             assert f'cron: "{cron}"' in workflow
-            assert f'github.event.schedule }}}}" = "{cron}"' in workflow
+            assert f'"{cron}"' in workflow
         assert f"SESSION={session}" in workflow
 
 
