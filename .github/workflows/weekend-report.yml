@@ -1,0 +1,23 @@
+name: Weekend Quant Report
+
+on:
+  schedule:
+    # Beijing 09:37-10:22, Saturday-Sunday weekend fallback window.
+    - cron: "37 1 * * 6,0"
+    - cron: "52 1 * * 6,0"
+    - cron: "7 2 * * 6,0"
+    - cron: "22 2 * * 6,0"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  report:
+    uses: ./.github/workflows/daily-report.yml
+    with:
+      session: weekend_news
+      scheduled_run: ${{ github.event_name == 'schedule' }}
+    secrets: inherit

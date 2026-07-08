@@ -1,0 +1,23 @@
+name: Postmarket Quant Report
+
+on:
+  schedule:
+    # Beijing 16:37-17:22, Monday-Friday postmarket fallback window.
+    - cron: "37 8 * * 1-5"
+    - cron: "52 8 * * 1-5"
+    - cron: "7 9 * * 1-5"
+    - cron: "22 9 * * 1-5"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  report:
+    uses: ./.github/workflows/daily-report.yml
+    with:
+      session: postmarket
+      scheduled_run: ${{ github.event_name == 'schedule' }}
+    secrets: inherit

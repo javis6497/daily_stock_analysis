@@ -20,7 +20,7 @@
 - 每次运行可生成结构化 JSON/CSV 信号台账和静态 HTML 看板。
 - 资讯摘要采用 AKShare 财经快讯源 + 规则过滤，不依赖 LLM。
 - 报告会在 GitHub Actions 中归档为 artifact，便于回看历史 Markdown。
-- GitHub Actions 使用密集错峰窗口触发：工作日 08:36-09:57 盘前，14:08-14:49 基金操作提醒，16:36-17:17 盘后；周六/周日 09:36-10:17 周末量化周报。每个窗口内会多次尝试，成功后当天同类任务自动去重。
+- GitHub Actions 使用 4 个独立定时 workflow 错峰触发：工作日 08:37-09:37 盘前，14:07-14:52 基金操作提醒，16:37-17:22 盘后；周六/周日 09:37-10:22 周末量化周报。每个窗口内会多次尝试，成功后当天同类任务自动去重。
 - 工作日会拆成两条钉钉消息：操作建议一条，资讯摘要一条。
 - GitHub Actions 运行失败时会尝试发送钉钉失败通知，附带 Actions 运行链接。
 
@@ -167,16 +167,16 @@ python -m stock_quant report --session premarket --config config/watchlist.yml -
 - `DINGTALK_SECRET`：钉钉加签密钥，可为空但不建议。
 - `WATCHLIST_YAML`：完整的 `config/watchlist.yml` 内容。若不设置，workflow 会用示例配置。
 
-上传后可以在 Actions 页面手动触发 `Daily Quant Report`，确认钉钉收到测试报告。
+上传后可以在 Actions 页面手动触发 `Daily Quant Report`，或分别触发 `Premarket Quant Report`、`Fund Action Report`、`Postmarket Quant Report`、`Weekend Quant Report`，确认钉钉收到测试报告。
 
 工作日 `premarket` / `postmarket` 会发送两条钉钉消息：
 
 - 操作建议：市场环境、组合总览、数据新鲜度、回测摘要、自选标的信号、持仓成本/盈亏、持仓级建议、持仓逻辑跟踪、自选外候选观察、报告质检。
 - 资讯摘要：相关新闻和摘要。
 
-工作日 `fund_action` 会在北京时间 14:08-14:49 窗口内多次尝试发送基金操作提醒，只包含自选基金/ETF，不包含股票、资讯或自选外候选，并会附带持仓逻辑跟踪和报告质检。同一天任意一次成功发送后，后续同类触发会自动去重。
+工作日 `fund_action` 会在北京时间 14:07-14:52 窗口内多次尝试发送基金操作提醒，只包含自选基金/ETF，不包含股票、资讯或自选外候选，并会附带持仓逻辑跟踪和报告质检。同一天任意一次成功发送后，后续同类触发会自动去重。
 
-为降低 GitHub Actions 定时任务漏触发的影响，四类自动任务都会使用密集错峰触发窗口，避开整点、整点后 5 分钟内、15 分、30 分、45 分等常见高峰分钟，并用“北京时间日期 + session”的缓存标记跳过重复发送。手动触发 `workflow_dispatch` 不走去重限制，方便测试。
+为降低 GitHub Actions 定时任务漏触发的影响，四类自动任务拆成独立 workflow 并使用错峰触发窗口，避开整点、整点后 5 分钟内、15 分、30 分、45 分等常见高峰分钟，并用“北京时间日期 + session”的缓存标记跳过重复发送。手动触发 `workflow_dispatch` 不走去重限制，方便测试。
 
 如果测试、数据获取或发送步骤失败，workflow 会尝试发送一条“量化日报任务失败”到钉钉，消息里包含本次 GitHub Actions 运行链接，便于直接定位失败步骤。
 

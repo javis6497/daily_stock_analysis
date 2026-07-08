@@ -1,0 +1,23 @@
+name: Fund Action Report
+
+on:
+  schedule:
+    # Beijing 14:07-14:52, Monday-Friday fund action fallback window.
+    - cron: "7 6 * * 1-5"
+    - cron: "22 6 * * 1-5"
+    - cron: "37 6 * * 1-5"
+    - cron: "52 6 * * 1-5"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  report:
+    uses: ./.github/workflows/daily-report.yml
+    with:
+      session: fund_action
+      scheduled_run: ${{ github.event_name == 'schedule' }}
+    secrets: inherit

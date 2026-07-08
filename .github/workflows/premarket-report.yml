@@ -1,0 +1,24 @@
+name: Premarket Quant Report
+
+on:
+  schedule:
+    # Beijing 08:37-09:37, Monday-Friday premarket fallback window.
+    - cron: "37 0 * * 1-5"
+    - cron: "52 0 * * 1-5"
+    - cron: "7 1 * * 1-5"
+    - cron: "22 1 * * 1-5"
+    - cron: "37 1 * * 1-5"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  report:
+    uses: ./.github/workflows/daily-report.yml
+    with:
+      session: premarket
+      scheduled_run: ${{ github.event_name == 'schedule' }}
+    secrets: inherit

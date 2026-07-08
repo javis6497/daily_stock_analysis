@@ -7,56 +7,38 @@ def _workflow_text() -> str:
     return Path(".github/workflows/daily-report.yml").read_text(encoding="utf-8")
 
 
-def test_workflow_schedules_redundant_windows_for_all_sessions():
-    workflow = _workflow_text()
-
+def test_scheduled_workflows_are_split_by_session():
     expected = {
-        "premarket": (
-            "36 0 * * 1-5",
-            "43 0 * * 1-5",
-            "51 0 * * 1-5",
-            "59 0 * * 1-5",
-            "8 1 * * 1-5",
-            "17 1 * * 1-5",
-            "29 1 * * 1-5",
-            "38 1 * * 1-5",
-            "49 1 * * 1-5",
-            "57 1 * * 1-5",
-        ),
-        "fund_action": (
-            "8 6 * * 1-5",
-            "17 6 * * 1-5",
-            "29 6 * * 1-5",
-            "38 6 * * 1-5",
-            "49 6 * * 1-5",
-        ),
-        "postmarket": (
-            "36 8 * * 1-5",
-            "43 8 * * 1-5",
-            "51 8 * * 1-5",
-            "59 8 * * 1-5",
-            "8 9 * * 1-5",
-            "17 9 * * 1-5",
-        ),
-        "weekend_news": (
-            "36 1 * * 6,0",
-            "43 1 * * 6,0",
-            "51 1 * * 6,0",
-            "59 1 * * 6,0",
-            "8 2 * * 6,0",
-            "17 2 * * 6,0",
-        ),
+        "premarket-report.yml": ("premarket", ("37 0 * * 1-5", "52 0 * * 1-5", "7 1 * * 1-5", "22 1 * * 1-5", "37 1 * * 1-5")),
+        "fund-action-report.yml": ("fund_action", ("7 6 * * 1-5", "22 6 * * 1-5", "37 6 * * 1-5", "52 6 * * 1-5")),
+        "postmarket-report.yml": ("postmarket", ("37 8 * * 1-5", "52 8 * * 1-5", "7 9 * * 1-5", "22 9 * * 1-5")),
+        "weekend-report.yml": ("weekend_news", ("37 1 * * 6,0", "52 1 * * 6,0", "7 2 * * 6,0", "22 2 * * 6,0")),
     }
 
-    for session, crons in expected.items():
+    for filename, (session, crons) in expected.items():
+        workflow = Path(".github/workflows", filename).read_text(encoding="utf-8")
+        assert "uses: ./.github/workflows/daily-report.yml" in workflow
+        assert f"session: {session}" in workflow
+        assert "scheduled_run: ${{ github.event_name == 'schedule' }}" in workflow
         for cron in crons:
             assert f'cron: "{cron}"' in workflow
-            assert f'"{cron}"' in workflow
-        assert f"SESSION={session}" in workflow
+
+
+def test_daily_report_workflow_is_manual_and_reusable_not_scheduled():
+    workflow = _workflow_text()
+
+    assert "workflow_dispatch:" in workflow
+    assert "workflow_call:" in workflow
+    assert "schedule:" not in workflow
+    assert "session:" in workflow
+    assert "scheduled_run:" in workflow
 
 
 def test_workflow_schedule_minutes_avoid_common_peak_slots():
-    workflow = _workflow_text()
+    workflow = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in Path(".github/workflows").glob("*.yml")
+    )
     peak_minutes = {0, 1, 2, 3, 4, 5, 15, 30, 45}
     cron_lines = [line.strip() for line in workflow.splitlines() if line.strip().startswith("- cron:")]
 
@@ -77,7 +59,8 @@ def test_workflow_skips_duplicate_scheduled_session_with_daily_cache_marker():
     assert "actions/cache/save@v4" in workflow
     assert "cache_key=report-sent-${SESSION}-${report_date}" in workflow
     assert "key: ${{ steps.report-meta.outputs.cache_key }}" in workflow
-    assert "github.event_name != 'schedule' || steps.sent-cache.outputs.cache-hit != 'true'" in workflow
+    assert "SCHEDULED_RUN: ${{ inputs.scheduled_run == true }}" in workflow
+    assert "env.SCHEDULED_RUN != 'true' || steps.sent-cache.outputs.cache-hit != 'true'" in workflow
 
 
 def test_workflow_notifies_dingtalk_when_report_job_fails():
