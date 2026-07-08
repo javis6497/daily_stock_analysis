@@ -80,6 +80,15 @@ def render_action_report(
         f"- 推送口径：量化研究信号 + 风险提示 + 人工确认",
         "",
     ]
+    if session == "postmarket":
+        return _render_postmarket_action_report(
+            lines,
+            signals,
+            market_environment,
+            portfolio_summary,
+            freshness_report,
+            audit_result,
+        )
     lines.extend(_market_environment_lines(market_environment))
     lines.extend(["", *_portfolio_summary_lines(portfolio_summary)])
     lines.extend(["", *_freshness_lines(freshness_report)])
@@ -126,6 +135,66 @@ def render_action_report(
 
     lines.extend(["", *_thesis_review_lines(signals, thesis_reviews)])
     if audit_result is not None:
+        audit_summary = render_audit_summary(audit_result)
+        if audit_summary:
+            lines.extend(["", audit_summary])
+
+    lines.extend(
+        [
+            "",
+            "## 免责声明",
+            "本报告仅为量化研究信号和风险提示，不自动交易，不构成保证收益或个人投顾建议。任何操作需自行判断并控制仓位风险。",
+        ]
+    )
+    return "\n".join(line for line in lines if line is not None)
+
+
+def _render_postmarket_action_report(
+    lines: list[str],
+    signals: list[Signal],
+    market_environment: MarketEnvironment | None,
+    portfolio_summary: PortfolioSummary | None,
+    freshness_report: DataFreshnessReport | None,
+    audit_result: ReportAuditResult | None,
+) -> str:
+    lines.extend(["## 盘后复盘重点"])
+    if market_environment is not None:
+        lines.append(
+            f"- 市场收盘状态：{market_environment.status}；风险等级：{market_environment.risk_level}；仓位倾向：{market_environment.position_bias}"
+        )
+    if portfolio_summary is not None and portfolio_summary.total_principal > 0:
+        lines.append(
+            f"- 组合收盘估算：市值 {portfolio_summary.total_market_value:.2f}；盈亏 {portfolio_summary.total_pnl_pct:.2%}（{portfolio_summary.total_pnl_amount:.2f}）"
+        )
+    if freshness_report is not None and (freshness_report.stale_symbols or freshness_report.failed_symbols):
+        issues = []
+        if freshness_report.stale_symbols:
+            issues.append("滞后 " + ", ".join(freshness_report.stale_symbols))
+        if freshness_report.failed_symbols:
+            issues.append("失败 " + ", ".join(freshness_report.failed_symbols))
+        lines.append(f"- 数据提醒：{'；'.join(issues)}")
+    if len(lines) <= 6:
+        lines.append("- 收盘后重点看持仓状态、风险位和止盈/减仓观察位，不重复盘前候选和回测信息。")
+
+    lines.extend(["", "## 自选持仓收盘信号"])
+    if signals:
+        for signal in signals:
+            instrument = signal.instrument
+            lines.extend(
+                [
+                    f"### {instrument.name} ({instrument.symbol})",
+                    f"- 收盘状态：{signal.status}；动作：{signal.action}；置信度：{signal.confidence:.0%}",
+                    f"- 收盘价/净值：{signal.last_close:.4f}；风险位：{signal.stop_loss:.4f}；止盈/减仓观察位：{signal.take_profit:.4f}",
+                    _holding_line(signal),
+                    _distance_line(signal),
+                    _holding_advice_line(signal),
+                    "",
+                ]
+            )
+    else:
+        lines.extend(["- 暂无可用自选标的信号。", ""])
+
+    if audit_result is not None and audit_result.items:
         audit_summary = render_audit_summary(audit_result)
         if audit_summary:
             lines.extend(["", audit_summary])
@@ -196,7 +265,10 @@ def render_fund_action_report(
         "- 数据口径：基于当前可用最新净值/行情；如配置代理 ETF/指数，会显示 14:00 盘中估算。",
         "",
     ]
-    lines.extend(_market_environment_lines(market_environment))
+    if market_environment is not None:
+        lines.append(
+            f"- 盘中背景：{market_environment.status} / {market_environment.risk_level}；{market_environment.position_bias}"
+        )
     lines.extend(["", "## 自选基金操作信号"])
 
     if fund_signals:
@@ -209,22 +281,17 @@ def render_fund_action_report(
                     f"- 最新价/净值：{signal.last_close:.4f}；MA20：{_fmt(signal.ma20)}；MA60：{_fmt(signal.ma60)}；RSI：{_fmt(signal.rsi)}",
                     _intraday_estimate_line(signal, intraday_estimates),
                     _holding_line(signal),
-                    _position_policy_line(signal),
-                    _target_position_advice_line(signal, position_advices),
                     _distance_line(signal),
                     _holding_advice_line(signal),
                     f"- 买入观察区：{signal.buy_zone.lower:.4f} - {signal.buy_zone.upper:.4f}",
                     f"- 风险位：{signal.stop_loss:.4f}；止盈/减仓观察位：{signal.take_profit:.4f}",
-                    f"- 依据：{'；'.join(signal.reasons)}",
-                    f"- 风险：{'；'.join(signal.risks)}",
                     "",
                 ]
             )
     else:
         lines.extend(["- 当前自选列表中没有基金/ETF信号。", ""])
 
-    lines.extend(["", *_thesis_review_lines(fund_signals, thesis_reviews)])
-    if audit_result is not None:
+    if audit_result is not None and audit_result.items:
         audit_summary = render_audit_summary(audit_result)
         if audit_summary:
             lines.extend(["", audit_summary])
