@@ -24,6 +24,16 @@ on:
         required: false
         default: false
         type: boolean
+      delivery_target:
+        description: "Beijing delivery target in HH:MM"
+        required: false
+        default: ""
+        type: string
+      delivery_tolerance_minutes:
+        description: "Allowed delivery drift before and after the target"
+        required: false
+        default: 5
+        type: number
 
 concurrency:
   group: daily-quant-report-${{ github.ref }}
@@ -43,6 +53,8 @@ jobs:
       WATCHLIST_YAML: ${{ secrets.WATCHLIST_YAML }}
       ENABLE_PAGES: ${{ vars.ENABLE_PAGES }}
       SCHEDULED_RUN: ${{ inputs.scheduled_run == true }}
+      DELIVERY_TARGET: ${{ inputs.delivery_target }}
+      DELIVERY_TOLERANCE_MINUTES: ${{ inputs.delivery_tolerance_minutes }}
 
     steps:
       - name: Checkout
@@ -88,7 +100,7 @@ jobs:
           key: ${{ steps.report-meta.outputs.cache_key }}
 
       - name: Run tests
-        if: env.SCHEDULED_RUN != 'true' || steps.sent-cache.outputs.cache-hit != 'true'
+        if: env.SCHEDULED_RUN != 'true'
         run: python -m pytest
 
       - name: Restore dashboard history
@@ -105,14 +117,37 @@ jobs:
         shell: bash
         run: |
           pages_flag=""
+          delivery_args=()
           if [ "$ENABLE_PAGES" = "true" ]; then
             pages_flag="--pages-enabled"
           fi
+          if [ "$SCHEDULED_RUN" = "true" ] && [ -n "$DELIVERY_TARGET" ]; then
+            delivery_args+=(--delivery-target "$DELIVERY_TARGET")
+            delivery_args+=(--delivery-tolerance-minutes "$DELIVERY_TOLERANCE_MINUTES")
+          fi
           if [ -n "$DINGTALK_WEBHOOK" ]; then
-            python -m stock_quant report --session "$SESSION" --config config/watchlist.yml --send --archive-dir reports --ledger-dir reports/ledger --dashboard-dir site $pages_flag
+            python -m stock_quant report --session "$SESSION" --config config/watchlist.yml --send --archive-dir reports --ledger-dir reports/ledger --dashboard-dir site $pages_flag "${delivery_args[@]}"
+          elif [ "$SCHEDULED_RUN" = "true" ]; then
+            echo "DINGTALK_WEBHOOK is required for a scheduled delivery" >&2
+            exit 1
           else
             python -m stock_quant report --session "$SESSION" --config config/watchlist.yml --dry-run --archive-dir reports --ledger-dir reports/ledger --dashboard-dir site $pages_flag
           fi
+
+      - name: Write scheduled delivery receipt
+        id: delivery-marker
+        if: env.SCHEDULED_RUN == 'true' && steps.sent-cache.outputs.cache-hit != 'true' && success()
+        shell: bash
+        run: |
+          mkdir -p .report-sent
+          printf 'sent %s on %s; target=%s; completed=%s\n' "$SESSION" "$REPORT_DATE" "$DELIVERY_TARGET" "$(TZ=Asia/Shanghai date --iso-8601=seconds)" > ".report-sent/${{ steps.report-meta.outputs.cache_key }}"
+
+      - name: Save scheduled delivery receipt
+        if: env.SCHEDULED_RUN == 'true' && steps.sent-cache.outputs.cache-hit != 'true' && steps.delivery-marker.outcome == 'success'
+        uses: actions/cache/save@v4
+        with:
+          path: .report-sent
+          key: ${{ steps.report-meta.outputs.cache_key }}
 
       - name: Upload report artifact
         if: (env.SCHEDULED_RUN != 'true' || steps.sent-cache.outputs.cache-hit != 'true') && success()
@@ -146,24 +181,10 @@ jobs:
           key: dashboard-site-${{ env.REPORT_DATE }}-${{ env.SESSION }}-${{ github.run_id }}
 
       - name: Notify failure
-        if: failure() && env.DINGTALK_WEBHOOK != '' && (env.SCHEDULED_RUN != 'true' || steps.sent-cache.outputs.cache-hit != 'true')
+        if: failure() && env.DINGTALK_WEBHOOK != '' && (env.SCHEDULED_RUN != 'true' || steps.delivery-marker.outcome != 'success') && (env.SCHEDULED_RUN != 'true' || steps.sent-cache.outputs.cache-hit != 'true')
         shell: bash
         run: |
           report_date="${REPORT_DATE:-$(TZ=Asia/Shanghai date +%F)}"
           session="${SESSION:-unknown}"
           run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-          python -m stock_quant notify-failure --session "$session" --report-date "$report_date" --run-url "$run_url" --message "Daily Quant Report workflow failed"
-
-      - name: Write scheduled send marker
-        if: env.SCHEDULED_RUN == 'true' && steps.sent-cache.outputs.cache-hit != 'true' && success()
-        shell: bash
-        run: |
-          mkdir -p .report-sent
-          printf 'sent %s on %s\n' "$SESSION" "$REPORT_DATE" > ".report-sent/${{ steps.report-meta.outputs.cache_key }}"
-
-      - name: Save scheduled send marker
-        if: env.SCHEDULED_RUN == 'true' && steps.sent-cache.outputs.cache-hit != 'true' && success()
-        uses: actions/cache/save@v4
-        with:
-          path: .report-sent
-          key: ${{ steps.report-meta.outputs.cache_key }}
+          python -m stock_quant notify-failure --session "$session" --report-date "$report_date" --run-url "$run_url" --message "Daily Quant Report failed; target=${DELIVERY_TARGET:-manual}, tolerance=+/-${DELIVERY_TOLERANCE_MINUTES:-5} minutes"

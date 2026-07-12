@@ -74,7 +74,40 @@ def test_send_dingtalk_markdown_raises_when_api_errcode_is_nonzero(monkeypatch):
             "内容",
             webhook="https://oapi.dingtalk.com/robot/send?access_token=test",
             secret="",
+            max_attempts=1,
         )
+
+
+def test_send_dingtalk_markdown_retries_transient_network_failure(monkeypatch):
+    notify = require_module("stock_quant.notify")
+    attempts = []
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"errcode": 0, "errmsg": "ok"}
+
+    def fake_post(*args, **kwargs):
+        attempts.append(1)
+        if len(attempts) == 1:
+            raise notify.requests.Timeout("temporary timeout")
+        return FakeResponse()
+
+    monkeypatch.setattr(notify.requests, "post", fake_post)
+    monkeypatch.setattr(notify.time, "sleep", lambda _seconds: None)
+
+    result = notify.send_dingtalk_markdown(
+        "日报",
+        "内容",
+        webhook="https://oapi.dingtalk.com/robot/send?access_token=test",
+        secret="",
+        max_attempts=3,
+    )
+
+    assert len(attempts) == 2
+    assert result["errcode"] == 0
 
 
 def test_send_dingtalk_markdown_chunks_adds_part_numbers(monkeypatch):

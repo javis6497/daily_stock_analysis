@@ -6,7 +6,7 @@ import hmac
 import os
 import time
 import urllib.parse
-from typing import Any
+from typing import Any, Callable
 
 import requests
 
@@ -44,6 +44,8 @@ def send_dingtalk_markdown(
     secret: str | None = None,
     dry_run: bool = False,
     timeout: int = 10,
+    max_attempts: int = 3,
+    before_attempt: Callable[[], None] | None = None,
 ) -> dict[str, Any]:
     webhook = webhook or os.environ.get("DINGTALK_WEBHOOK")
     secret = secret if secret is not None else os.environ.get("DINGTALK_SECRET")
@@ -54,18 +56,31 @@ def send_dingtalk_markdown(
     if not webhook:
         raise ValueError("DINGTALK_WEBHOOK is required when sending reports")
 
-    response = requests.post(
-        build_dingtalk_signed_url(webhook, secret),
-        json=payload,
-        timeout=timeout,
-    )
-    response.raise_for_status()
-    result = response.json()
-    if int(result.get("errcode", 0)) != 0:
-        raise RuntimeError(
-            f"DingTalk send failed: errcode={result.get('errcode')} errmsg={result.get('errmsg')}"
-        )
-    return result
+    if max_attempts < 1:
+        raise ValueError("max_attempts must be positive")
+
+    for attempt in range(1, max_attempts + 1):
+        if before_attempt:
+            before_attempt()
+        try:
+            response = requests.post(
+                build_dingtalk_signed_url(webhook, secret),
+                json=payload,
+                timeout=timeout,
+            )
+            response.raise_for_status()
+            result = response.json()
+            if int(result.get("errcode", 0)) != 0:
+                raise RuntimeError(
+                    f"DingTalk send failed: errcode={result.get('errcode')} errmsg={result.get('errmsg')}"
+                )
+            return result
+        except requests.RequestException:
+            if attempt == max_attempts:
+                raise
+            time.sleep(min(2 ** (attempt - 1), 4))
+
+    raise RuntimeError("DingTalk send failed without a response")
 
 
 def split_markdown_chunks(markdown: str, max_chars: int = 3500) -> list[str]:
@@ -100,6 +115,8 @@ def send_dingtalk_markdown_chunks(
     dry_run: bool = False,
     timeout: int = 10,
     max_chars: int = 3500,
+    max_attempts: int = 3,
+    before_attempt: Callable[[], None] | None = None,
 ) -> list[dict[str, Any]]:
     chunks = split_markdown_chunks(markdown, max_chars=max_chars)
     total = len(chunks)
@@ -114,6 +131,8 @@ def send_dingtalk_markdown_chunks(
                 secret=secret,
                 dry_run=dry_run,
                 timeout=timeout,
+                max_attempts=max_attempts,
+                before_attempt=before_attempt,
             )
         )
     return results

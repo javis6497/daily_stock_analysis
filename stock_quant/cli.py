@@ -4,7 +4,7 @@ import argparse
 import json
 import os
 from dataclasses import replace
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from re import sub
 from zoneinfo import ZoneInfo
@@ -13,6 +13,7 @@ from .backtest import run_backtest
 from .calendar import is_cn_trading_day
 from .config import load_config
 from .data import create_provider, fetch_many, resolve_instrument_names
+from .delivery_window import ensure_delivery_window_open, wait_for_delivery_window
 from .freshness import build_data_freshness
 from .alerts import build_alerts
 from .dashboard import generate_dashboard
@@ -56,6 +57,8 @@ def main(argv: list[str] | None = None) -> int:
     report_parser.add_argument("--ledger-dir", default="", help="保存结构化信号台账 JSON/CSV 的目录")
     report_parser.add_argument("--dashboard-dir", default="", help="生成 GitHub Pages 静态看板的目录")
     report_parser.add_argument("--pages-enabled", action="store_true", help="标记看板将公开发布到 GitHub Pages")
+    report_parser.add_argument("--delivery-target", default="", help="定时发送目标，北京时间 HH:MM")
+    report_parser.add_argument("--delivery-tolerance-minutes", type=int, default=5, help="目标时间前后允许发送的分钟数")
 
     backtest_parser = subparsers.add_parser("backtest", help="对自选标的做简单回看")
     backtest_parser.add_argument("--config", default=os.environ.get("WATCHLIST_CONFIG", "config/watchlist.yml"))
@@ -83,12 +86,11 @@ def _run_report(args: argparse.Namespace) -> int:
     app_config = load_config(config_path)
     provider_name = "sample" if args.sample_data else app_config.data.provider
     app_config = _resolve_display_names(app_config, provider_name)
-    report_day = date.today()
     try:
-        report_day = date.today()
-        ZoneInfo(app_config.timezone)
+        timezone = ZoneInfo(app_config.timezone)
     except Exception:
-        pass
+        timezone = ZoneInfo("Asia/Shanghai")
+    report_day = datetime.now(timezone).date()
 
     if args.session == "weekend_news":
         return _run_weekend_news_report(args, app_config, report_day)
@@ -98,7 +100,14 @@ def _run_report(args: argparse.Namespace) -> int:
     if app_config.report.skip_non_trading_day and not args.dry_run and not is_cn_trading_day(report_day):
         message = f"{report_day.isoformat()} 不是 A 股交易日，跳过日报。"
         if args.send:
-            send_dingtalk_markdown("量化日报跳过", message, dry_run=args.dry_run)
+            _send_messages(
+                [("量化日报跳过", message)],
+                send=True,
+                dry_run=args.dry_run,
+                delivery_target=args.delivery_target,
+                delivery_tolerance_minutes=args.delivery_tolerance_minutes,
+                timezone_name=app_config.timezone,
+            )
         else:
             print(message)
         return 0
@@ -194,7 +203,14 @@ def _run_report(args: argparse.Namespace) -> int:
         audit_result,
     )
     _generate_dashboard_if_requested(args.dashboard_dir, report_day, args.session, ledger_json_path, archived_files, args.pages_enabled)
-    _send_messages(messages, send=args.send, dry_run=args.dry_run)
+    _send_messages(
+        messages,
+        send=args.send,
+        dry_run=args.dry_run,
+        delivery_target=args.delivery_target,
+        delivery_tolerance_minutes=args.delivery_tolerance_minutes,
+        timezone_name=app_config.timezone,
+    )
     return 0
 
 
@@ -252,7 +268,14 @@ def _run_weekend_news_report(args: argparse.Namespace, app_config, report_day: d
         None,
     )
     _generate_dashboard_if_requested(args.dashboard_dir, report_day, args.session, ledger_json_path, archived_files, args.pages_enabled)
-    _send_messages(messages, send=args.send, dry_run=args.dry_run)
+    _send_messages(
+        messages,
+        send=args.send,
+        dry_run=args.dry_run,
+        delivery_target=args.delivery_target,
+        delivery_tolerance_minutes=args.delivery_tolerance_minutes,
+        timezone_name=app_config.timezone,
+    )
     return 0
 
 
@@ -260,7 +283,14 @@ def _run_fund_action_report(args: argparse.Namespace, app_config, report_day: da
     if app_config.report.skip_non_trading_day and not args.dry_run and not is_cn_trading_day(report_day):
         message = f"{report_day.isoformat()} 不是 A 股交易日，跳过基金操作提醒。"
         if args.send:
-            send_dingtalk_markdown("基金操作提醒跳过", message, dry_run=args.dry_run)
+            _send_messages(
+                [("基金操作提醒跳过", message)],
+                send=True,
+                dry_run=args.dry_run,
+                delivery_target=args.delivery_target,
+                delivery_tolerance_minutes=args.delivery_tolerance_minutes,
+                timezone_name=app_config.timezone,
+            )
         else:
             print(message)
         return 0
@@ -320,7 +350,14 @@ def _run_fund_action_report(args: argparse.Namespace, app_config, report_day: da
         audit_result,
     )
     _generate_dashboard_if_requested(args.dashboard_dir, report_day, args.session, ledger_json_path, archived_files, args.pages_enabled)
-    _send_messages(messages, send=args.send, dry_run=args.dry_run)
+    _send_messages(
+        messages,
+        send=args.send,
+        dry_run=args.dry_run,
+        delivery_target=args.delivery_target,
+        delivery_tolerance_minutes=args.delivery_tolerance_minutes,
+        timezone_name=app_config.timezone,
+    )
     return 0
 
 
@@ -360,13 +397,36 @@ def _resolve_display_names(app_config, provider_name: str):
     )
 
 
-def _send_messages(messages: list[tuple[str, str]], send: bool, dry_run: bool) -> None:
+def _send_messages(
+    messages: list[tuple[str, str]],
+    send: bool,
+    dry_run: bool,
+    delivery_target: str = "",
+    delivery_tolerance_minutes: int = 5,
+    timezone_name: str = "Asia/Shanghai",
+) -> None:
+    delivery_window = None
+    before_attempt = None
+    if send and not dry_run and delivery_target:
+        delivery_window = wait_for_delivery_window(
+            delivery_target,
+            tolerance_minutes=delivery_tolerance_minutes,
+            timezone_name=timezone_name,
+        )
+        before_attempt = lambda: ensure_delivery_window_open(delivery_window)
+
     for idx, (title, markdown) in enumerate(messages):
         if send:
-            results = send_dingtalk_markdown_chunks(title, markdown, dry_run=dry_run)
+            send_options = {"dry_run": dry_run}
+            if before_attempt is not None:
+                send_options["before_attempt"] = before_attempt
+            results = send_dingtalk_markdown_chunks(title, markdown, **send_options)
             for part, result in enumerate(results, start=1):
                 errcode = result.get("errcode", "dry_run")
                 print(f"DingTalk sent: {title} part {part}/{len(results)} errcode={errcode}")
+        if delivery_window is not None:
+            sent_at = ensure_delivery_window_open(delivery_window)
+            print(f"Delivery receipt: {title} sent_at={sent_at.isoformat()}")
         if dry_run or not send:
             if idx:
                 print("\n---\n")

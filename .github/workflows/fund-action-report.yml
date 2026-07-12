@@ -2,11 +2,12 @@ name: Fund Action Report
 
 on:
   schedule:
-    # Beijing 14:07-14:52, Monday-Friday fund action fallback window.
-    - cron: "7 6 * * 1-5"
-    - cron: "22 6 * * 1-5"
-    - cron: "37 6 * * 1-5"
-    - cron: "52 6 * * 1-5"
+    # Wake early and redundantly; actual delivery is restricted to Beijing 14:02-14:12.
+    - cron: "48 5 * * 1-5"
+    - cron: "53 5 * * 1-5"
+    - cron: "58 5 * * 1-5"
+    - cron: "3 6 * * 1-5"
+    - cron: "8 6 * * 1-5"
   workflow_dispatch:
 
 permissions:
@@ -20,4 +21,6 @@ jobs:
     with:
       session: fund_action
       scheduled_run: ${{ github.event_name == 'schedule' }}
+      delivery_target: "14:07"
+      delivery_tolerance_minutes: 5
     secrets: inherit
