@@ -109,6 +109,7 @@ def test_render_action_report_contains_thesis_reviews_and_audit_summary():
         audit_result=audit_result,
     )
 
-    assert "持仓逻辑跟踪" in markdown
-    assert "宽基修复持有" in markdown
+    assert "持仓逻辑状态" in markdown
+    assert "1 只持仓均未触发失效条件" in markdown
+    assert "宽基修复持有" not in markdown
     assert "报告质检" in markdown

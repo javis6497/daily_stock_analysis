@@ -58,6 +58,7 @@ def _render_html(payload: dict, report_files: list[dict[str, str]], pages_enable
     alerts = payload.get("alerts") or []
     thesis_reviews = payload.get("thesis_reviews") or {}
     report_audit = payload.get("report_audit") or {}
+    price_history = payload.get("price_history") or {}
     publish_note = "" if pages_enabled else "<p class='warn'>Pages 发布默认关闭，避免公开仓库暴露持仓金额。</p>"
     return f"""<!doctype html>
 <html lang="zh-CN">
@@ -77,7 +78,30 @@ def _render_html(payload: dict, report_files: list[dict[str, str]], pages_enable
     th, td {{ border-bottom: 1px solid #e5eaf0; padding: 9px 8px; text-align: left; }}
     th {{ background: #f0f4f8; }}
     .warn {{ color: #8a4b00; background: #fff7e6; border: 1px solid #f2d08a; padding: 10px; border-radius: 6px; }}
+    details.holding {{ border-top: 1px solid #e1e7ed; }}
+    details.holding:last-child {{ border-bottom: 1px solid #e1e7ed; }}
+    details.holding summary {{ display: grid; grid-template-columns: minmax(180px, 1.8fr) repeat(3, minmax(90px, .7fr)); gap: 10px; align-items: center; padding: 13px 4px; cursor: pointer; list-style-position: inside; }}
+    details.holding[open] summary {{ border-bottom: 1px solid #e8edf2; }}
+    .holding-body {{ padding: 14px 4px 18px; }}
+    .holding-name {{ font-weight: 700; }}
+    .muted {{ color: #65717c; font-size: 13px; }}
+    .signal-strong {{ color: #b42318; }}
+    .signal-weak {{ color: #137333; }}
+    .chart-wrap {{ overflow-x: auto; border: 1px solid #e2e8ee; background: #fff; margin-top: 12px; }}
+    .holding-chart {{ display: block; width: 100%; min-width: 620px; height: auto; }}
+    .legend {{ display: flex; flex-wrap: wrap; gap: 14px; color: #52606d; font-size: 12px; margin: 8px 0; }}
+    .dot {{ display: inline-block; width: 18px; height: 3px; margin-right: 5px; vertical-align: middle; }}
+    .detail-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 9px; margin-top: 12px; }}
+    .detail-item {{ padding: 9px 10px; background: #f7f9fb; border-left: 3px solid #aab6c2; }}
+    .table-scroll {{ overflow-x: auto; }}
     a {{ color: #0b63ce; }}
+    @media (max-width: 720px) {{
+      header {{ padding: 20px 16px; }}
+      main {{ padding: 12px; }}
+      section {{ padding: 13px; }}
+      details.holding summary {{ grid-template-columns: 1fr 1fr; }}
+      details.holding summary .holding-name {{ grid-column: 1 / -1; }}
+    }}
   </style>
 </head>
 <body>
@@ -98,7 +122,8 @@ def _render_html(payload: dict, report_files: list[dict[str, str]], pages_enable
     </section>
     <section>
       <h2>当前持仓信号</h2>
-      {_signals_table(signals)}
+      <p class="muted">点击每只持仓可展开或收起完整信号与走势图。</p>
+      {_holding_details(signals, price_history, thesis_reviews)}
     </section>
     <section>
       <h2>自选外候选</h2>
@@ -109,10 +134,6 @@ def _render_html(payload: dict, report_files: list[dict[str, str]], pages_enable
       {_alerts_list(alerts)}
     </section>
     <section>
-      <h2>持仓逻辑跟踪</h2>
-      {_thesis_reviews_table(thesis_reviews)}
-    </section>
-    <section>
       <h2>报告质检</h2>
       {_audit_panel(report_audit)}
     </section>
@@ -121,30 +142,139 @@ def _render_html(payload: dict, report_files: list[dict[str, str]], pages_enable
       {_report_links(report_files)}
     </section>
   </main>
+  <script>
+    function openHoldingFromHash() {{
+      if (!location.hash) return;
+      const target = document.querySelector(location.hash);
+      if (target && target.tagName === "DETAILS") {{
+        target.open = true;
+        target.scrollIntoView({{ behavior: "smooth", block: "start" }});
+      }}
+    }}
+    window.addEventListener("hashchange", openHoldingFromHash);
+    window.addEventListener("DOMContentLoaded", openHoldingFromHash);
+  </script>
 </body>
 </html>
 """
 
 
-def _signals_table(signals: list[dict]) -> str:
+def _holding_details(
+    signals: list[dict],
+    price_history: dict[str, list[dict]],
+    thesis_reviews: dict,
+) -> str:
     if not signals:
         return "<p>暂无信号。</p>"
-    rows = []
+    blocks = []
     for item in signals:
-        rows.append(
-            "<tr>"
-            f"<td>{escape(str(item.get('name', '')))}</td>"
-            f"<td>{escape(str(item.get('symbol', '')))}</td>"
-            f"<td>{escape(str(item.get('status', '')))}</td>"
-            f"<td>{_money(item.get('position_principal') or item.get('holding_amount'))}</td>"
-            f"<td>{_money(item.get('position_market_value') or item.get('market_value'))}</td>"
-            f"<td>{_pct(item.get('pnl_pct'))}</td>"
-            f"<td>{_money(item.get('pnl_amount'))}</td>"
-            f"<td>{_number(item.get('stop_loss'))}</td>"
-            f"<td>{_number(item.get('take_profit'))}</td>"
-            "</tr>"
+        symbol = str(item.get("symbol", ""))
+        status = str(item.get("status", ""))
+        status_class = "signal-strong" if status == "偏强" else "signal-weak" if status == "偏弱" else ""
+        review = thesis_reviews.get(symbol) or {}
+        instrument = review.get("instrument") or {}
+        chart = _candlestick_chart(price_history.get(symbol) or [], item)
+        blocks.append(
+            f"<details class='holding' id='holding-{escape(symbol)}'>"
+            "<summary>"
+            f"<span class='holding-name'>{escape(str(item.get('name', '')))} <span class='muted'>{escape(symbol)}</span></span>"
+            f"<span class='{status_class}'>{escape(status)} / {escape(str(item.get('action', '')))}</span>"
+            f"<span>盈亏 {_pct(item.get('pnl_pct'))}</span>"
+            f"<span>市值 {_money(item.get('position_market_value') or item.get('market_value'))}</span>"
+            "</summary>"
+            "<div class='holding-body'>"
+            "<div class='detail-grid'>"
+            f"<div class='detail-item'>最新价/净值<br><strong>{_number(item.get('last_close'))}</strong></div>"
+            f"<div class='detail-item'>持仓成本<br><strong>{_number(item.get('cost_price') or item.get('implied_cost_price'))}</strong></div>"
+            f"<div class='detail-item'>投入本金<br><strong>{_money(item.get('position_principal') or item.get('holding_amount'))}</strong></div>"
+            f"<div class='detail-item'>估算盈亏<br><strong>{_money(item.get('pnl_amount'))}</strong></div>"
+            f"<div class='detail-item'>买入观察区<br><strong>{_number(item.get('buy_zone_lower'))} - {_number(item.get('buy_zone_upper'))}</strong></div>"
+            f"<div class='detail-item'>风险位 / 止盈位<br><strong>{_number(item.get('stop_loss'))} / {_number(item.get('take_profit'))}</strong></div>"
+            "</div>"
+            f"{chart}"
+            "<h3>持仓逻辑跟踪</h3>"
+            f"<p>{escape(str(instrument.get('thesis') or item.get('thesis') or '未配置持仓逻辑'))}</p>"
+            f"<p class='muted'>失效条件：{escape(str(instrument.get('invalidation') or item.get('invalidation') or '未配置'))}</p>"
+            f"<p class='muted'>复核：{escape(str(review.get('status') or '暂无'))}；{escape(str(review.get('note') or ''))}</p>"
+            "</div></details>"
         )
-    return "<table><thead><tr><th>名称</th><th>代码</th><th>状态</th><th>本金</th><th>市值</th><th>盈亏</th><th>盈亏金额</th><th>风险位</th><th>止盈位</th></tr></thead><tbody>" + "".join(rows) + "</tbody></table>"
+    return "".join(blocks)
+
+
+def _candlestick_chart(bars: list[dict], signal: dict) -> str:
+    if len(bars) < 2:
+        return "<p class='muted'>暂无足够行情绘制 K 线。</p>"
+    bars = bars[-90:]
+    width, height = 760, 300
+    left, right, top, bottom = 52, 16, 18, 35
+    plot_width = width - left - right
+    plot_height = height - top - bottom
+    lows = [float(item["low"]) for item in bars]
+    highs = [float(item["high"]) for item in bars]
+    low, high = min(lows), max(highs)
+    padding = max((high - low) * 0.08, abs(high) * 0.002, 0.001)
+    low -= padding
+    high += padding
+    span = high - low or 1.0
+
+    def y(value: float) -> float:
+        return top + (high - value) / span * plot_height
+
+    step = plot_width / len(bars)
+    body_width = max(2.0, min(8.0, step * 0.58))
+    svg: list[str] = [
+        f"<svg class='holding-chart' viewBox='0 0 {width} {height}' role='img' aria-label='最近90日K线走势图'>",
+        "<rect width='100%' height='100%' fill='#ffffff'/>",
+    ]
+    for idx in range(5):
+        value = high - span * idx / 4
+        y_pos = y(value)
+        svg.append(f"<line x1='{left}' y1='{y_pos:.1f}' x2='{width-right}' y2='{y_pos:.1f}' stroke='#edf1f4'/>")
+        svg.append(f"<text x='{left-6}' y='{y_pos+4:.1f}' text-anchor='end' font-size='10' fill='#6b7785'>{value:.3f}</text>")
+    for idx, bar in enumerate(bars):
+        x = left + step * (idx + 0.5)
+        open_price = float(bar["open"])
+        close = float(bar["close"])
+        color = "#c62828" if close >= open_price else "#14833b"
+        svg.append(f"<line x1='{x:.1f}' y1='{y(float(bar['high'])):.1f}' x2='{x:.1f}' y2='{y(float(bar['low'])):.1f}' stroke='{color}' stroke-width='1'/>")
+        body_top = min(y(open_price), y(close))
+        body_height = max(1.0, abs(y(open_price) - y(close)))
+        svg.append(f"<rect x='{x-body_width/2:.1f}' y='{body_top:.1f}' width='{body_width:.1f}' height='{body_height:.1f}' fill='{color}'/>")
+
+    closes = [float(item["close"]) for item in bars]
+    for period, color in ((20, "#d28b00"), (60, "#1769aa")):
+        points = []
+        for idx in range(period - 1, len(closes)):
+            average = sum(closes[idx - period + 1 : idx + 1]) / period
+            x = left + step * (idx + 0.5)
+            points.append(f"{x:.1f},{y(average):.1f}")
+        if points:
+            svg.append(f"<polyline points='{' '.join(points)}' fill='none' stroke='{color}' stroke-width='1.6'/>")
+
+    level_specs = (
+        (signal.get("cost_price") or signal.get("implied_cost_price"), "#6b4fa1", "成本"),
+        (signal.get("stop_loss"), "#14833b", "风险位"),
+        (signal.get("take_profit"), "#c62828", "止盈位"),
+    )
+    for value, color, label in level_specs:
+        if value is None or not low <= float(value) <= high:
+            continue
+        y_pos = y(float(value))
+        svg.append(f"<line x1='{left}' y1='{y_pos:.1f}' x2='{width-right}' y2='{y_pos:.1f}' stroke='{color}' stroke-dasharray='5 4'/>")
+        svg.append(f"<text x='{width-right-2}' y='{y_pos-4:.1f}' text-anchor='end' font-size='10' fill='{color}'>{label}</text>")
+    svg.append(f"<text x='{left}' y='{height-10}' font-size='10' fill='#6b7785'>{escape(str(bars[0].get('date', '')))}</text>")
+    svg.append(f"<text x='{width-right}' y='{height-10}' text-anchor='end' font-size='10' fill='#6b7785'>{escape(str(bars[-1].get('date', '')))}</text>")
+    svg.append("</svg>")
+    legend = (
+        "<div class='legend'>"
+        "<span><i class='dot' style='background:#d28b00'></i>MA20</span>"
+        "<span><i class='dot' style='background:#1769aa'></i>MA60</span>"
+        "<span><i class='dot' style='background:#6b4fa1'></i>成本</span>"
+        "<span><i class='dot' style='background:#14833b'></i>风险位</span>"
+        "<span><i class='dot' style='background:#c62828'></i>止盈位</span>"
+        "</div>"
+    )
+    return f"<div class='chart-wrap'>{''.join(svg)}</div>{legend}"
 
 
 def _candidates_table(candidates: list[dict]) -> str:
@@ -163,7 +293,8 @@ def _candidates_table(candidates: list[dict]) -> str:
             f"<td>{_number(item.get('pe'))} / {_number(item.get('pb'))}</td>"
             "</tr>"
         )
-    return "<table><thead><tr><th>名称</th><th>代码</th><th>评分</th><th>分组</th><th>质量分</th><th>画像</th><th>PE/PB</th></tr></thead><tbody>" + "".join(rows) + "</tbody></table>"
+    table = "<table><thead><tr><th>名称</th><th>代码</th><th>评分</th><th>分组</th><th>质量分</th><th>画像</th><th>PE/PB</th></tr></thead><tbody>" + "".join(rows) + "</tbody></table>"
+    return f"<div class='table-scroll'>{table}</div>"
 
 
 def _alerts_list(alerts: list[dict]) -> str:

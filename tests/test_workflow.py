@@ -94,6 +94,15 @@ def test_workflow_restores_and_saves_dashboard_history_cache():
     assert "restore-keys: dashboard-site-" in workflow
 
 
+def test_workflow_restores_and_saves_market_data_cache():
+    workflow = _workflow_text()
+
+    assert "MARKET_DATA_CACHE_DIR: .market-data-cache" in workflow
+    assert "Restore market data cache" in workflow
+    assert "Save market data cache" in workflow
+    assert "restore-keys: market-data-" in workflow
+
+
 def test_workflow_pages_publish_is_guarded_by_explicit_variable():
     workflow = _workflow_text()
 

@@ -65,3 +65,50 @@ def test_resolve_instrument_names_replaces_placeholder_fund_name(monkeypatch):
     assert resolved[0].name == "景顺长城纳斯达克科技ETF联接"
     assert resolved[0].cost_price == 2.0
     assert resolved[0].holding_amount == 10000.0
+
+
+def test_akshare_provider_retries_then_succeeds(monkeypatch):
+    data = require_module("stock_quant.data")
+    models = require_module("stock_quant.models")
+
+    class FlakyAkShare(_FakeAkShare):
+        def fund_open_fund_info_em(self, symbol: str, indicator: str):
+            self.calls.append(("open_fund", symbol, indicator))
+            if len(self.calls) < 3:
+                raise TimeoutError("temporary failure")
+            return _FakeFrame()
+
+    fake = FlakyAkShare()
+    monkeypatch.setitem(sys.modules, "akshare", fake)
+    monkeypatch.setattr(data.time, "sleep", lambda _seconds: None)
+
+    bars = data.AkShareDataProvider(max_attempts=3).fetch_bars(
+        models.Instrument("018044", "基金018044", "cn", "fund"),
+        lookback_days=5,
+    )
+
+    assert len(fake.calls) == 3
+    assert bars[-1].close == 1.2345
+
+
+def test_akshare_provider_uses_last_cache_after_retries_fail(monkeypatch, tmp_path):
+    data = require_module("stock_quant.data")
+    models = require_module("stock_quant.models")
+    instrument = models.Instrument("018044", "基金018044", "cn", "fund")
+    working = _FakeAkShare()
+    monkeypatch.setitem(sys.modules, "akshare", working)
+    provider = data.AkShareDataProvider(cache_dir=tmp_path, max_attempts=1)
+    provider.fetch_bars(instrument, lookback_days=5)
+
+    class BrokenAkShare:
+        def fund_open_fund_info_em(self, **_kwargs):
+            raise TimeoutError("provider down")
+
+    monkeypatch.setitem(sys.modules, "akshare", BrokenAkShare())
+    cached = data.AkShareDataProvider(cache_dir=tmp_path, max_attempts=2, retry_delay=0).fetch_bars(
+        instrument,
+        lookback_days=5,
+    )
+
+    assert cached[-1].date.isoformat() == "2026-07-01"
+    assert cached[-1].close == 1.2345

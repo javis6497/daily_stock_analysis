@@ -161,7 +161,9 @@ def _run_report(args: argparse.Namespace) -> int:
         backtest_summary,
         position_advices,
         thesis_reviews,
+        dashboard_url=_dashboard_url(args),
     )
+    action_markdown = _append_dashboard_link(action_markdown, _dashboard_url(args))
     audit_result = audit_report(action_markdown, args.session)
     action_markdown = render_action_report(
         args.session,
@@ -176,6 +178,7 @@ def _run_report(args: argparse.Namespace) -> int:
         position_advices,
         thesis_reviews,
         audit_result,
+        dashboard_url=_dashboard_url(args),
     )
     messages = [
         (
@@ -201,6 +204,7 @@ def _run_report(args: argparse.Namespace) -> int:
         alerts,
         thesis_reviews,
         audit_result,
+        watch_bars,
     )
     _generate_dashboard_if_requested(args.dashboard_dir, report_day, args.session, ledger_json_path, archived_files, args.pages_enabled)
     _send_messages(
@@ -251,6 +255,7 @@ def _run_weekend_news_report(args: argparse.Namespace, app_config, report_day: d
         market_environment=market_environment,
         portfolio_summary=portfolio_summary,
     )
+    markdown = _append_dashboard_link(markdown, _dashboard_url(args))
     title = "周末量化周报"
     messages = [(title, markdown)]
 
@@ -266,6 +271,7 @@ def _run_weekend_news_report(args: argparse.Namespace, app_config, report_day: d
         [],
         build_thesis_reviews(signals),
         None,
+        watch_bars,
     )
     _generate_dashboard_if_requested(args.dashboard_dir, report_day, args.session, ledger_json_path, archived_files, args.pages_enabled)
     _send_messages(
@@ -321,7 +327,9 @@ def _run_fund_action_report(args: argparse.Namespace, app_config, report_day: da
         intraday_estimates,
         position_advices,
         thesis_reviews,
+        dashboard_url=_dashboard_url(args),
     )
+    markdown = _append_dashboard_link(markdown, _dashboard_url(args))
     audit_result = audit_report(markdown, args.session)
     markdown = render_fund_action_report(
         report_day,
@@ -332,6 +340,7 @@ def _run_fund_action_report(args: argparse.Namespace, app_config, report_day: da
         position_advices,
         thesis_reviews,
         audit_result,
+        dashboard_url=_dashboard_url(args),
     )
     messages = [("14:00基金操作提醒", markdown)]
     if alerts:
@@ -348,6 +357,7 @@ def _run_fund_action_report(args: argparse.Namespace, app_config, report_day: da
         alerts,
         thesis_reviews,
         audit_result,
+        watch_bars,
     )
     _generate_dashboard_if_requested(args.dashboard_dir, report_day, args.session, ledger_json_path, archived_files, args.pages_enabled)
     _send_messages(
@@ -514,6 +524,22 @@ def _resolve_config(path: str) -> Path:
     return config_path
 
 
+def _dashboard_url(args: argparse.Namespace) -> str | None:
+    if not getattr(args, "pages_enabled", False):
+        return None
+    return os.environ.get("DASHBOARD_URL", "").strip() or None
+
+
+def _append_dashboard_link(markdown: str, dashboard_url: str | None) -> str:
+    if not dashboard_url:
+        return markdown
+    block = f"## 完整图表\n[点击查看可折叠持仓、K线与技术指标]({dashboard_url.rstrip('/')}/)"
+    disclaimer = "\n## 免责声明"
+    if disclaimer in markdown:
+        return markdown.replace(disclaimer, f"\n{block}\n{disclaimer}", 1)
+    return f"{markdown}\n\n{block}"
+
+
 def _fetch_benchmark_bars(provider, app_config) -> list | None:
     from .models import Instrument
 
@@ -540,6 +566,7 @@ def _write_ledger_if_requested(
     alerts,
     thesis_reviews=None,
     audit_result=None,
+    price_history=None,
 ) -> Path | None:
     if not ledger_dir:
         return None
@@ -554,6 +581,7 @@ def _write_ledger_if_requested(
         list(alerts),
         thesis_reviews or {},
         audit_result,
+        price_history,
     )
     return Path(ledger_dir) / manifest["json"]
 

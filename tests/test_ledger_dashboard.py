@@ -4,6 +4,7 @@ import json
 from datetime import date
 
 from tests.helpers import require_module
+from tests.helpers import make_bars
 
 
 def _sample_objects():
@@ -66,6 +67,7 @@ def test_write_signal_ledger_outputs_json_and_csv(tmp_path):
         market_environment=market,
         portfolio_summary=portfolio,
         alerts=[],
+        price_history={signal.instrument: make_bars(count=65)},
     )
 
     json_path = tmp_path / manifest["json"]
@@ -76,6 +78,15 @@ def test_write_signal_ledger_outputs_json_and_csv(tmp_path):
     assert payload["market_environment"]["status"] == "进攻"
     assert payload["portfolio_summary"]["total_market_value"] == 11000
     assert payload["signals"][0]["symbol"] == "018044"
+    assert len(payload["price_history"]["018044"]) == 65
+    assert set(payload["price_history"]["018044"][-1]) == {
+        "date",
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+    }
     assert "018044" in csv_path.read_text(encoding="utf-8")
 
 
@@ -104,6 +115,7 @@ def test_generate_dashboard_writes_static_pages(tmp_path):
         alerts=[],
         thesis_reviews={"018044": thesis_review},
         audit_result=audit_result,
+        price_history={signal.instrument: make_bars(count=65)},
     )
     report_dir = tmp_path / "reports"
     report_dir.mkdir()
@@ -125,6 +137,15 @@ def test_generate_dashboard_writes_static_pages(tmp_path):
     assert "持仓逻辑跟踪" in html
     assert "报告质检" in html
     assert "通过" in html
+    assert "<details" in html
+    assert "holding-chart" in html
+    assert "<svg" in html
+    assert "MA20" in html
+    assert "成本" in html
+    assert "风险位" in html
+    assert "止盈位" in html
+    assert "id='holding-018044'" in html
+    assert "openHoldingFromHash" in html
     assert "Pages 发布默认关闭" in html
     assert data["signals"][0]["symbol"] == "018044"
     assert data["thesis_reviews"]["018044"]["status"] == "有效"

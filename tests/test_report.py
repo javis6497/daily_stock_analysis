@@ -102,6 +102,7 @@ def test_render_report_contains_holding_cost_amount_and_estimated_pnl():
         config=app_config,
         signals=[signal],
         candidates=[],
+        dashboard_url="https://javis6497.github.io/daily_stock_analysis/",
     )
 
     assert "持仓成本：2.0000" in markdown
@@ -110,12 +111,14 @@ def test_render_report_contains_holding_cost_amount_and_estimated_pnl():
     assert "1000.00" in markdown
     assert "持仓级建议" in markdown
     assert "继续持有" in markdown
-    assert "目标仓位：20%" in markdown
-    assert "最大仓位：30%" in markdown
-    assert "风险等级：medium" in markdown
-    assert "备注：核心基金" in markdown
+    assert "仓位目标 20% / 上限 30%" in markdown
+    assert "风险等级：medium" not in markdown
+    assert "备注：核心基金" not in markdown
     assert "距离风险位" in markdown
     assert "距离止盈观察位" in markdown
+    assert "[基金018044 (018044)](https://javis6497.github.io/daily_stock_analysis/#holding-018044)" in markdown
+    assert "MA20" not in markdown
+    assert "依据：趋势向上" not in markdown
 
 
 def test_render_action_report_contains_portfolio_freshness_and_backtest_summary():

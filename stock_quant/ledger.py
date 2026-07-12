@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import csv
 import json
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict, is_dataclass
 from datetime import date
 from pathlib import Path
 from typing import Any
 
 from .alerts import Alert
-from .models import CandidateScore, MarketEnvironment, PortfolioSummary, Signal, ThesisReview
+from .models import Bar, CandidateScore, Instrument, MarketEnvironment, PortfolioSummary, Signal, ThesisReview
 from .portfolio import build_portfolio_position, implied_cost_price
 from .report_audit import ReportAuditResult
 
@@ -24,6 +25,7 @@ def write_signal_ledger(
     alerts: list[Alert],
     thesis_reviews: dict[str, ThesisReview] | None = None,
     audit_result: ReportAuditResult | None = None,
+    price_history: Mapping[Instrument, Sequence[Bar]] | None = None,
 ) -> dict[str, str]:
     target = Path(output_dir)
     target.mkdir(parents=True, exist_ok=True)
@@ -42,6 +44,7 @@ def write_signal_ledger(
         "alerts": [_clean(alert) for alert in alerts],
         "thesis_reviews": _clean(thesis_reviews or {}),
         "report_audit": _clean(audit_result),
+        "price_history": _price_history_payload(price_history),
     }
     (target / json_name).write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     _write_csv(target / signals_csv_name, payload["signals"])
@@ -53,6 +56,27 @@ def write_signal_ledger(
     }
 
 
+def _price_history_payload(
+    price_history: Mapping[Instrument, Sequence[Bar]] | None,
+    max_bars: int = 90,
+) -> dict[str, list[dict[str, Any]]]:
+    if not price_history:
+        return {}
+    return {
+        instrument.symbol: [
+            {
+                "date": bar.date.isoformat(),
+                "open": float(bar.open),
+                "high": float(bar.high),
+                "low": float(bar.low),
+                "close": float(bar.close),
+                "volume": float(bar.volume),
+            }
+            for bar in list(bars)[-max_bars:]
+        ]
+        for instrument, bars in price_history.items()
+        if bars
+    }
 def _signal_row(signal: Signal) -> dict[str, Any]:
     instrument = signal.instrument
     position = build_portfolio_position(signal)

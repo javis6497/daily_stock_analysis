@@ -16,5 +16,6 @@ config/watchlist.yml
 .tmp_site/
 .tmp_verify_reports/
 .tmp_verify_site/
+.market-data-cache/
 .tmp_action_logs*/
 actions-run-*-logs.zip

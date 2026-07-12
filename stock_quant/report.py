@@ -8,6 +8,7 @@ from .models import (
     CandidateScore,
     DataFreshnessReport,
     FundIntradayEstimate,
+    Instrument,
     MarketEnvironment,
     MonthlyHoldingReview,
     PortfolioSummary,
@@ -71,6 +72,7 @@ def render_action_report(
     position_advices: dict[str, PositionAdvice] | None = None,
     thesis_reviews: dict[str, ThesisReview] | None = None,
     audit_result: ReportAuditResult | None = None,
+    dashboard_url: str | None = None,
 ) -> str:
     title = "盘前量化日报" if session == "premarket" else "盘后量化复盘"
     lines = [
@@ -88,6 +90,7 @@ def render_action_report(
             portfolio_summary,
             freshness_report,
             audit_result,
+            dashboard_url,
         )
     lines.extend(_market_environment_lines(market_environment))
     lines.extend(["", *_portfolio_summary_lines(portfolio_summary)])
@@ -100,18 +103,11 @@ def render_action_report(
             instrument = signal.instrument
             lines.extend(
                 [
-                    f"### {instrument.name} ({instrument.symbol})",
-                    f"- 状态：{signal.status}；动作：{signal.action}；置信度：{signal.confidence:.0%}",
-                    f"- 最新价：{signal.last_close:.4f}；MA20：{_fmt(signal.ma20)}；MA60：{_fmt(signal.ma60)}；RSI：{_fmt(signal.rsi)}",
+                    _instrument_heading(instrument, dashboard_url),
+                    f"- 状态：{signal.status}；动作：{signal.action}；最新价/净值：{signal.last_close:.4f}",
                     _holding_line(signal),
-                    _position_policy_line(signal),
-                    _target_position_advice_line(signal, position_advices),
-                    _distance_line(signal),
-                    _holding_advice_line(signal),
-                    f"- 买入观察区：{signal.buy_zone.lower:.4f} - {signal.buy_zone.upper:.4f}",
-                    f"- 风险位：{signal.stop_loss:.4f}；止盈/减仓观察位：{signal.take_profit:.4f}",
-                    f"- 依据：{'；'.join(signal.reasons)}",
-                    f"- 风险：{'；'.join(signal.risks)}",
+                    _compact_key_levels_line(signal),
+                    _compact_action_line(signal, position_advices),
                     "",
                 ]
             )
@@ -133,7 +129,7 @@ def render_action_report(
     else:
         lines.append("- 暂无候选标的。")
 
-    lines.extend(["", *_thesis_review_lines(signals, thesis_reviews)])
+    lines.extend(["", *_compact_thesis_status_lines(thesis_reviews)])
     if audit_result is not None:
         audit_summary = render_audit_summary(audit_result)
         if audit_summary:
@@ -156,6 +152,7 @@ def _render_postmarket_action_report(
     portfolio_summary: PortfolioSummary | None,
     freshness_report: DataFreshnessReport | None,
     audit_result: ReportAuditResult | None,
+    dashboard_url: str | None,
 ) -> str:
     lines.extend(["## 盘后复盘重点"])
     if market_environment is not None:
@@ -182,12 +179,11 @@ def _render_postmarket_action_report(
             instrument = signal.instrument
             lines.extend(
                 [
-                    f"### {instrument.name} ({instrument.symbol})",
-                    f"- 收盘状态：{signal.status}；动作：{signal.action}；置信度：{signal.confidence:.0%}",
-                    f"- 收盘价/净值：{signal.last_close:.4f}；风险位：{signal.stop_loss:.4f}；止盈/减仓观察位：{signal.take_profit:.4f}",
+                    _instrument_heading(instrument, dashboard_url),
+                    f"- 收盘状态：{signal.status}；动作：{signal.action}；收盘价/净值：{signal.last_close:.4f}",
                     _holding_line(signal),
-                    _distance_line(signal),
-                    _holding_advice_line(signal),
+                    _compact_key_levels_line(signal, include_buy_zone=False),
+                    f"- 操作结论：{_holding_advice(signal)}",
                     "",
                 ]
             )
@@ -251,6 +247,7 @@ def render_fund_action_report(
     position_advices: dict[str, PositionAdvice] | None = None,
     thesis_reviews: dict[str, ThesisReview] | None = None,
     audit_result: ReportAuditResult | None = None,
+    dashboard_url: str | None = None,
 ) -> str:
     fund_signals = [
         signal
@@ -276,15 +273,12 @@ def render_fund_action_report(
             instrument = signal.instrument
             lines.extend(
                 [
-                    f"### {instrument.name} ({instrument.symbol})",
-                    f"- 状态：{signal.status}；动作：{signal.action}；置信度：{signal.confidence:.0%}",
-                    f"- 最新价/净值：{signal.last_close:.4f}；MA20：{_fmt(signal.ma20)}；MA60：{_fmt(signal.ma60)}；RSI：{_fmt(signal.rsi)}",
+                    _instrument_heading(instrument, dashboard_url),
+                    f"- 状态：{signal.status}；动作：{signal.action}；最新价/净值：{signal.last_close:.4f}",
                     _intraday_estimate_line(signal, intraday_estimates),
                     _holding_line(signal),
-                    _distance_line(signal),
-                    _holding_advice_line(signal),
-                    f"- 买入观察区：{signal.buy_zone.lower:.4f} - {signal.buy_zone.upper:.4f}",
-                    f"- 风险位：{signal.stop_loss:.4f}；止盈/减仓观察位：{signal.take_profit:.4f}",
+                    _compact_key_levels_line(signal),
+                    f"- 操作结论：{_holding_advice(signal)}",
                     "",
                 ]
             )
@@ -531,35 +525,67 @@ def _backtest_summary_lines(backtest_summary: BacktestSummary | None) -> list[st
     return lines
 
 
-def _thesis_review_lines(
-    signals: list[Signal],
-    thesis_reviews: dict[str, ThesisReview] | None,
-) -> list[str]:
-    lines = ["## 持仓逻辑跟踪"]
-    if not thesis_reviews:
-        lines.append("- 暂无持仓逻辑配置；可在 WATCHLIST_YAML 中为每个持仓补充 thesis、thesis_risks、invalidation。")
-        return lines
-    for signal in signals:
-        review = thesis_reviews.get(signal.instrument.symbol)
-        if review is None:
-            continue
-        instrument = signal.instrument
-        lines.append(f"- {instrument.name} ({instrument.symbol})：{review.status}；{review.note}")
-        if instrument.thesis:
-            lines.append(f"  - 持仓逻辑：{instrument.thesis}")
-        if instrument.invalidation:
-            lines.append(f"  - 失效条件：{instrument.invalidation}")
-        if instrument.thesis_risks:
-            lines.append(f"  - 主要风险：{'；'.join(instrument.thesis_risks)}")
-    if len(lines) == 1:
-        lines.append("- 暂无持仓逻辑复核结果。")
-    return lines
-
-
 def _fmt(value: float | None) -> str:
     if value is None:
         return "N/A"
     return f"{value:.4f}"
+
+
+def _compact_thesis_status_lines(
+    thesis_reviews: dict[str, ThesisReview] | None,
+) -> list[str]:
+    if not thesis_reviews:
+        return []
+    issues = [review for review in thesis_reviews.values() if review.status != "有效"]
+    lines = ["## 持仓逻辑状态"]
+    if not issues:
+        lines.append(f"- {len(thesis_reviews)} 只持仓均未触发失效条件，完整逻辑与风险见图表看板。")
+        return lines
+    for review in issues:
+        lines.append(f"- {review.instrument.name} ({review.instrument.symbol})：{review.status}；{review.note}")
+    return lines
+
+
+def _instrument_heading(instrument: Instrument, dashboard_url: str | None) -> str:
+    label = f"{instrument.name} ({instrument.symbol})"
+    if not dashboard_url:
+        return f"### {label}"
+    target = dashboard_url.rstrip("/") + f"/#holding-{instrument.symbol}"
+    return f"### [{label}]({target})"
+
+
+def _compact_key_levels_line(signal: Signal, include_buy_zone: bool = True) -> str:
+    risk_distance = None if signal.stop_loss <= 0 else signal.last_close / signal.stop_loss - 1
+    take_profit_distance = None if signal.last_close <= 0 else signal.take_profit / signal.last_close - 1
+    parts: list[str] = []
+    if include_buy_zone:
+        parts.append(f"观察区 {signal.buy_zone.lower:.4f}-{signal.buy_zone.upper:.4f}")
+    parts.append(f"风险位 {signal.stop_loss:.4f}（距离风险位 {_pct(risk_distance)}）")
+    parts.append(f"止盈位 {signal.take_profit:.4f}（距离止盈观察位 {_pct(take_profit_distance)}）")
+    return "- 关键位置：" + "；".join(parts)
+
+
+def _compact_action_line(
+    signal: Signal,
+    advices: dict[str, PositionAdvice] | None,
+) -> str:
+    parts = [f"持仓级建议：{_holding_advice(signal)}"]
+    instrument = signal.instrument
+    advice = None if not advices else advices.get(instrument.symbol)
+    if advice is not None:
+        current = "N/A" if advice.current_weight is None else f"{advice.current_weight:.0%}"
+        parts.append(
+            f"仓位 {current}，建议 {advice.suggested_min:.0%}-{advice.suggested_max:.0%}，{advice.action}"
+        )
+    else:
+        limits = []
+        if instrument.target_weight is not None:
+            limits.append(f"目标 {instrument.target_weight:.0%}")
+        if instrument.max_weight is not None:
+            limits.append(f"上限 {instrument.max_weight:.0%}")
+        if limits:
+            parts.append("仓位" + " / ".join(limits))
+    return "- " + "；".join(parts)
 
 
 def _pct(value: float | None) -> str:
@@ -595,38 +621,6 @@ def _holding_line(signal: Signal) -> str | None:
     if not parts:
         return None
     return "- " + "；".join(parts)
-
-
-def _position_policy_line(signal: Signal) -> str | None:
-    instrument = signal.instrument
-    parts: list[str] = []
-    if instrument.target_weight is not None:
-        parts.append(f"目标仓位：{instrument.target_weight:.0%}")
-    if instrument.max_weight is not None:
-        parts.append(f"最大仓位：{instrument.max_weight:.0%}")
-    if instrument.risk_level:
-        parts.append(f"风险等级：{instrument.risk_level}")
-    if instrument.note:
-        parts.append(f"备注：{instrument.note}")
-    if not parts:
-        return None
-    return "- " + "；".join(parts)
-
-
-def _target_position_advice_line(
-    signal: Signal,
-    advices: dict[str, PositionAdvice] | None,
-) -> str | None:
-    if not advices:
-        return None
-    advice = advices.get(signal.instrument.symbol)
-    if advice is None:
-        return None
-    current = "N/A" if advice.current_weight is None else f"{advice.current_weight:.0%}"
-    return (
-        f"- 建议仓位区间：{advice.suggested_min:.0%} - {advice.suggested_max:.0%}；"
-        f"当前占比：{current}；动作：{advice.action}；依据：{advice.reason}"
-    )
 
 
 def _intraday_estimate_line(

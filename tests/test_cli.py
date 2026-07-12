@@ -242,3 +242,15 @@ def test_send_daily_messages_sends_action_and_news_separately(monkeypatch):
         ("盘前操作建议", "action text", False),
         ("盘前资讯摘要", "news text", False),
     ]
+
+
+def test_dashboard_link_is_inserted_before_disclaimer():
+    cli = __import__("stock_quant.cli", fromlist=["cli"])
+
+    markdown = cli._append_dashboard_link(
+        "# 日报\n\n## 免责声明\n风险提示",
+        "https://example.github.io/repo/",
+    )
+
+    assert "[点击查看可折叠持仓、K线与技术指标]" in markdown
+    assert markdown.index("## 完整图表") < markdown.index("## 免责声明")

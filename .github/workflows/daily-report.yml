@@ -52,9 +52,11 @@ jobs:
       DINGTALK_SECRET: ${{ secrets.DINGTALK_SECRET }}
       WATCHLIST_YAML: ${{ secrets.WATCHLIST_YAML }}
       ENABLE_PAGES: ${{ vars.ENABLE_PAGES }}
+      DASHBOARD_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
       SCHEDULED_RUN: ${{ inputs.scheduled_run == true }}
       DELIVERY_TARGET: ${{ inputs.delivery_target }}
       DELIVERY_TOLERANCE_MINUTES: ${{ inputs.delivery_tolerance_minutes }}
+      MARKET_DATA_CACHE_DIR: .market-data-cache
 
     steps:
       - name: Checkout
@@ -111,6 +113,14 @@ jobs:
           path: site
           key: dashboard-site-${{ env.REPORT_DATE }}-${{ env.SESSION }}-${{ github.run_id }}
           restore-keys: dashboard-site-
+
+      - name: Restore market data cache
+        if: env.SCHEDULED_RUN != 'true' || steps.sent-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: .market-data-cache
+          key: market-data-${{ env.REPORT_DATE }}-${{ env.SESSION }}-${{ github.run_id }}
+          restore-keys: market-data-
 
       - name: Generate and send report
         if: env.SCHEDULED_RUN != 'true' || steps.sent-cache.outputs.cache-hit != 'true'
@@ -179,6 +189,14 @@ jobs:
         with:
           path: site
           key: dashboard-site-${{ env.REPORT_DATE }}-${{ env.SESSION }}-${{ github.run_id }}
+
+      - name: Save market data cache
+        if: (env.SCHEDULED_RUN != 'true' || steps.sent-cache.outputs.cache-hit != 'true') && success()
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: .market-data-cache
+          key: market-data-${{ env.REPORT_DATE }}-${{ env.SESSION }}-${{ github.run_id }}
 
       - name: Notify failure
         if: failure() && env.DINGTALK_WEBHOOK != '' && (env.SCHEDULED_RUN != 'true' || steps.delivery-marker.outcome != 'success') && (env.SCHEDULED_RUN != 'true' || steps.sent-cache.outputs.cache-hit != 'true')

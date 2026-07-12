@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import json
+import os
+import time
 from collections.abc import Sequence
 from dataclasses import replace
 from datetime import date, timedelta
+from pathlib import Path
 from typing import Protocol
 
 from .models import Bar, Instrument
@@ -20,27 +24,76 @@ class SampleDataProvider:
 
 
 class AkShareDataProvider:
+    def __init__(self, cache_dir: str | Path | None = None, max_attempts: int = 3, retry_delay: float = 1.0):
+        configured_cache = cache_dir or os.environ.get("MARKET_DATA_CACHE_DIR")
+        self.cache_dir = Path(configured_cache) if configured_cache else None
+        self.max_attempts = max(1, int(max_attempts))
+        self.retry_delay = max(0.0, float(retry_delay))
+
     def fetch_bars(self, instrument: Instrument, lookback_days: int = 180) -> list[Bar]:
         try:
             import akshare as ak
         except ModuleNotFoundError as exc:
             raise RuntimeError("akshare is not installed; install requirements or use provider=sample") from exc
 
-        start_date = (date.today() - timedelta(days=lookback_days * 2)).strftime("%Y%m%d")
-        asset_type = instrument.asset_type.lower()
-        if asset_type == "fund":
-            frame = ak.fund_open_fund_info_em(symbol=instrument.symbol, indicator="单位净值走势")
-        elif asset_type == "etf":
-            frame = ak.fund_etf_hist_em(symbol=instrument.symbol, period="daily", start_date=start_date, adjust="qfq")
-        elif asset_type == "index":
-            frame = _fetch_index_frame(ak, instrument.symbol)
-        else:
-            frame = ak.stock_zh_a_hist(symbol=instrument.symbol, period="daily", start_date=start_date, adjust="qfq")
+        last_error: Exception | None = None
+        for attempt in range(1, self.max_attempts + 1):
+            try:
+                bars = _fetch_akshare_bars(ak, instrument, lookback_days)
+                self._save_cache(instrument, bars)
+                return bars[-lookback_days:]
+            except Exception as exc:
+                last_error = exc
+                if attempt < self.max_attempts:
+                    time.sleep(self.retry_delay * attempt)
 
-        bars = _frame_to_bars(frame)
-        if not bars:
-            raise RuntimeError(f"no bars returned for {instrument.symbol}")
-        return bars[-lookback_days:]
+        cached = self._load_cache(instrument)
+        if cached:
+            return cached[-lookback_days:]
+        raise RuntimeError(f"failed to fetch bars for {instrument.symbol} after {self.max_attempts} attempts") from last_error
+
+    def _cache_path(self, instrument: Instrument) -> Path | None:
+        if self.cache_dir is None:
+            return None
+        return self.cache_dir / f"{instrument.market}-{instrument.asset_type}-{instrument.symbol}.json"
+
+    def _save_cache(self, instrument: Instrument, bars: Sequence[Bar]) -> None:
+        path = self._cache_path(instrument)
+        if path is None:
+            return
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = [
+            {
+                "date": bar.date.isoformat(),
+                "open": bar.open,
+                "high": bar.high,
+                "low": bar.low,
+                "close": bar.close,
+                "volume": bar.volume,
+            }
+            for bar in bars
+        ]
+        path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+
+    def _load_cache(self, instrument: Instrument) -> list[Bar]:
+        path = self._cache_path(instrument)
+        if path is None or not path.exists():
+            return []
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            return [
+                Bar(
+                    date=date.fromisoformat(item["date"]),
+                    open=float(item["open"]),
+                    high=float(item["high"]),
+                    low=float(item["low"]),
+                    close=float(item["close"]),
+                    volume=float(item.get("volume", 0.0)),
+                )
+                for item in payload
+            ]
+        except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
+            return []
 
 
 def create_provider(name: str) -> MarketDataProvider:
@@ -66,6 +119,23 @@ def fetch_many(
             if strict:
                 raise
     return result
+
+
+def _fetch_akshare_bars(ak, instrument: Instrument, lookback_days: int) -> list[Bar]:
+    start_date = (date.today() - timedelta(days=lookback_days * 2)).strftime("%Y%m%d")
+    asset_type = instrument.asset_type.lower()
+    if asset_type == "fund":
+        frame = ak.fund_open_fund_info_em(symbol=instrument.symbol, indicator="单位净值走势")
+    elif asset_type == "etf":
+        frame = ak.fund_etf_hist_em(symbol=instrument.symbol, period="daily", start_date=start_date, adjust="qfq")
+    elif asset_type == "index":
+        frame = _fetch_index_frame(ak, instrument.symbol)
+    else:
+        frame = ak.stock_zh_a_hist(symbol=instrument.symbol, period="daily", start_date=start_date, adjust="qfq")
+    bars = _frame_to_bars(frame)
+    if not bars:
+        raise RuntimeError(f"no bars returned for {instrument.symbol}")
+    return bars
 
 
 def resolve_instrument_names(provider_name: str, instruments: Sequence[Instrument]) -> list[Instrument]:
