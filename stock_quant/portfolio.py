@@ -38,6 +38,27 @@ def build_portfolio_summary(signals: Sequence[Signal]) -> PortfolioSummary:
             )
         )
 
+    concentration_index = sum(position.weight**2 for position in weighted_positions)
+    effective_positions = 0.0 if concentration_index == 0 else 1 / concentration_index
+    largest_position_weight = max((position.weight for position in weighted_positions), default=0.0)
+    if largest_position_weight > 0.35:
+        warnings.append(f"单一标的最高占比 {largest_position_weight:.0%}，组合集中度偏高")
+    if concentration_index > 0.30 and len(weighted_positions) > 1:
+        warnings.append(f"有效分散标的仅 {effective_positions:.1f} 个，需关注同向回撤")
+
+    tag_weights: dict[str, float] = {}
+    ignored_tags = {"自选", "持仓", "基金", "股票"}
+    for position in weighted_positions:
+        for tag in position.instrument.tags:
+            if tag not in ignored_tags:
+                tag_weights[tag] = tag_weights.get(tag, 0.0) + position.weight
+    dominant_exposure = None
+    if tag_weights:
+        dominant_tag, dominant_weight = max(tag_weights.items(), key=lambda item: item[1])
+        dominant_exposure = f"{dominant_tag} {dominant_weight:.0%}"
+        if dominant_weight > 0.50:
+            warnings.append(f"{dominant_tag}主题暴露 {dominant_weight:.0%}，风格集中")
+
     return PortfolioSummary(
         total_principal=round(total_principal, 2),
         total_market_value=round(total_market_value, 2),
@@ -45,6 +66,10 @@ def build_portfolio_summary(signals: Sequence[Signal]) -> PortfolioSummary:
         total_pnl_pct=total_pnl_pct,
         positions=tuple(weighted_positions),
         warnings=tuple(warnings),
+        concentration_index=concentration_index,
+        effective_positions=effective_positions,
+        largest_position_weight=largest_position_weight,
+        dominant_exposure=dominant_exposure,
     )
 
 

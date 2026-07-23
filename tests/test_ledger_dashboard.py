@@ -75,9 +75,13 @@ def test_write_signal_ledger_outputs_json_and_csv(tmp_path):
     assert json_path.exists()
     assert csv_path.exists()
     payload = json.loads(json_path.read_text(encoding="utf-8"))
+    assert payload["schema_version"] == 2
+    assert payload["strategy_version"] == "trend-momentum-v2"
+    assert payload["data_as_of"] is not None
     assert payload["market_environment"]["status"] == "进攻"
     assert payload["portfolio_summary"]["total_market_value"] == 11000
     assert payload["signals"][0]["symbol"] == "018044"
+    assert payload["signals"][0]["reasons"] == "趋势向上"
     assert len(payload["price_history"]["018044"]) == 65
     assert set(payload["price_history"]["018044"][-1]) == {
         "date",

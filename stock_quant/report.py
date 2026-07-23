@@ -484,6 +484,13 @@ def _portfolio_summary_lines(portfolio_summary: PortfolioSummary | None) -> list
         ]
         if details:
             lines.append(f"- 持仓占比：{'；'.join(details)}")
+        lines.append(
+            f"- 集中度：HHI {portfolio_summary.concentration_index:.3f}；"
+            f"有效分散标的 {portfolio_summary.effective_positions:.1f} 个；"
+            f"单一标的最高 {portfolio_summary.largest_position_weight:.2%}"
+        )
+        if portfolio_summary.dominant_exposure:
+            lines.append(f"- 主要主题暴露：{portfolio_summary.dominant_exposure}")
     if portfolio_summary.warnings:
         lines.append(f"- 仓位提醒：{'；'.join(portfolio_summary.warnings)}")
     return lines
@@ -514,11 +521,12 @@ def _backtest_summary_lines(backtest_summary: BacktestSummary | None) -> list[st
         [
             f"- 覆盖标的：{backtest_summary.instrument_count}",
             f"- 平均区间收益：{backtest_summary.average_period_return:.2%}",
-            f"- 扣费后平均净收益：{_pct(backtest_summary.average_net_return)}",
+            f"- 策略扣费后平均净收益：{_pct(backtest_summary.average_net_return)}",
             f"- 基准收益：{_pct(backtest_summary.benchmark_return)}；平均超额：{_pct(backtest_summary.average_excess_return)}",
-            f"- 估算交易成本：{_pct(backtest_summary.estimated_cost_rate)}",
-            f"- 最大回撤：{backtest_summary.max_drawdown:.2%}",
-            f"- 信号成功率：{backtest_summary.signal_success_rate:.2%}",
+            f"- 实际换手估算成本：{_pct(backtest_summary.estimated_cost_rate)}",
+            f"- 策略最大回撤：{backtest_summary.max_drawdown:.2%}；平均夏普：{_fmt(backtest_summary.average_sharpe_ratio)}",
+            f"- 方向命中率：{backtest_summary.signal_success_rate:.2%}；交易次数：{backtest_summary.total_trade_count}",
+            f"- 防未来函数：{'通过' if backtest_summary.lookahead_safe else '未通过'}；决策滞后：{backtest_summary.decision_lag_bars} 根 K 线",
             f"- 结论：{backtest_summary.summary}",
         ]
     )

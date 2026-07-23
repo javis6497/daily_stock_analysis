@@ -5,6 +5,8 @@ from collections.abc import Sequence
 from .indicators import atr, macd, max_drawdown, rsi, sma
 from .models import Bar, Instrument, PriceRange, Signal
 
+STRATEGY_VERSION = "trend-momentum-v2"
+
 
 def analyze_instrument(
     instrument: Instrument,

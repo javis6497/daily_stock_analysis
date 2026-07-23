@@ -60,7 +60,7 @@ def main(argv: list[str] | None = None) -> int:
     report_parser.add_argument("--delivery-target", default="", help="定时发送目标，北京时间 HH:MM")
     report_parser.add_argument("--delivery-tolerance-minutes", type=int, default=5, help="目标时间前后允许发送的分钟数")
 
-    backtest_parser = subparsers.add_parser("backtest", help="对自选标的做简单回看")
+    backtest_parser = subparsers.add_parser("backtest", help="对自选标的做逐日 walk-forward 回测")
     backtest_parser.add_argument("--config", default=os.environ.get("WATCHLIST_CONFIG", "config/watchlist.yml"))
     backtest_parser.add_argument("--sample-data", action="store_true")
 
@@ -430,10 +430,16 @@ def _send_messages(
             send_options = {"dry_run": dry_run}
             if before_attempt is not None:
                 send_options["before_attempt"] = before_attempt
+            journal_dir = os.environ.get("DELIVERY_JOURNAL_DIR")
+            delivery_key = os.environ.get("DELIVERY_KEY", "")
+            if journal_dir and delivery_key and delivery_target:
+                send_options["receipt_dir"] = journal_dir
+                send_options["delivery_key"] = f"{delivery_key}-message-{idx + 1}"
             results = send_dingtalk_markdown_chunks(title, markdown, **send_options)
             for part, result in enumerate(results, start=1):
                 errcode = result.get("errcode", "dry_run")
-                print(f"DingTalk sent: {title} part {part}/{len(results)} errcode={errcode}")
+                state = "skipped" if result.get("skipped") else "sent"
+                print(f"DingTalk {state}: {title} part {part}/{len(results)} errcode={errcode}")
         if delivery_window is not None:
             sent_at = ensure_delivery_window_open(delivery_window)
             print(f"Delivery receipt: {title} sent_at={sent_at.isoformat()}")

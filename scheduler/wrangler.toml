@@ -1,0 +1,21 @@
+name = "stock-quant-scheduler"
+main = "src/index.js"
+compatibility_date = "2026-07-01"
+
+[vars]
+GITHUB_OWNER = "javis6497"
+GITHUB_REPO = "daily_stock_analysis"
+GITHUB_REF = "main"
+WORKFLOW_FILE = "daily-report.yml"
+
+[triggers]
+crons = [
+  "27 0 * * 1-5",
+  "32 0 * * 1-5",
+  "57 5 * * 1-5",
+  "2 6 * * 1-5",
+  "27 8 * * 1-5",
+  "32 8 * * 1-5",
+  "27 1 * * 6,0",
+  "32 1 * * 6,0"
+]

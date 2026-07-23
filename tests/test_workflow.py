@@ -36,19 +36,21 @@ def test_daily_report_workflow_is_manual_and_reusable_not_scheduled():
     assert "scheduled_run:" in workflow
 
 
-def test_workflow_skips_duplicate_scheduled_session_with_daily_cache_marker():
+def test_workflow_skips_duplicate_scheduled_session_with_persistent_delivery_state():
     workflow = Path(".github/workflows/daily-report.yml").read_text(encoding="utf-8")
 
     assert "concurrency:" in workflow
     assert "group: daily-quant-report-${{ github.ref }}" in workflow
     assert "cancel-in-progress: false" in workflow
     assert "REPORT_DATE" in workflow
-    assert "actions/cache/restore@v4" in workflow
-    assert "actions/cache/save@v4" in workflow
-    assert "cache_key=report-sent-${SESSION}-${report_date}" in workflow
-    assert "key: ${{ steps.report-meta.outputs.cache_key }}" in workflow
+    assert "actions/cache/restore@v5" in workflow
+    assert "actions/cache/save@v5" in workflow
+    assert "state_prefix=report-state-${SESSION}-${report_date}-" in workflow
+    assert "restore-keys: ${{ steps.report-meta.outputs.state_prefix }}" in workflow
+    assert 'if [ -f ".report-state/${DELIVERY_KEY}.complete" ]' in workflow
+    assert "steps.delivery-state.outputs.completed != 'true'" in workflow
     assert "SCHEDULED_RUN: ${{ inputs.scheduled_run == true }}" in workflow
-    assert "env.SCHEDULED_RUN != 'true' || steps.sent-cache.outputs.cache-hit != 'true'" in workflow
+    assert "DELIVERY_JOURNAL_DIR: .report-state" in workflow
     assert workflow.index("Write scheduled delivery receipt") < workflow.index("Upload report artifact")
 
 
@@ -62,6 +64,22 @@ def test_scheduled_run_enforces_delivery_window_and_skips_test_suite():
     assert '--delivery-tolerance-minutes "$DELIVERY_TOLERANCE_MINUTES"' in workflow
     assert "if: env.SCHEDULED_RUN != 'true'" in workflow
     assert "DINGTALK_WEBHOOK is required for a scheduled delivery" in workflow
+    assert "continue-on-error: ${{ inputs.silent_failure == true }}" in workflow
+
+
+def test_scheduled_wrappers_suppress_failure_email_but_manual_runs_stay_strict():
+    core = _workflow_text()
+
+    assert "silent_failure:" in core
+    assert "default: false" in core
+    for filename in (
+        "premarket-report.yml",
+        "fund-action-report.yml",
+        "postmarket-report.yml",
+        "weekend-report.yml",
+    ):
+        workflow = Path(".github/workflows", filename).read_text(encoding="utf-8")
+        assert "silent_failure: ${{ github.event_name == 'schedule' }}" in workflow
 
 
 def test_workflow_notifies_dingtalk_when_report_job_fails():
@@ -80,7 +98,7 @@ def test_workflow_archives_generated_reports_as_artifact():
     assert "--archive-dir reports" in workflow
     assert "--ledger-dir reports/ledger" in workflow
     assert "--dashboard-dir site" in workflow
-    assert "actions/upload-artifact@v4" in workflow
+    assert "actions/upload-artifact@v6" in workflow
     assert "path: |\n            reports\n            site" in workflow
     assert "daily-quant-report-${{ env.SESSION }}-${{ env.REPORT_DATE }}" in workflow
 

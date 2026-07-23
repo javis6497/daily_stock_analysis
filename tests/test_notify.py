@@ -110,6 +110,35 @@ def test_send_dingtalk_markdown_retries_transient_network_failure(monkeypatch):
     assert result["errcode"] == 0
 
 
+def test_send_dingtalk_markdown_retries_transient_api_error(monkeypatch):
+    notify = require_module("stock_quant.notify")
+    attempts = []
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            attempts.append(1)
+            if len(attempts) == 1:
+                return {"errcode": 130101, "errmsg": "temporary busy"}
+            return {"errcode": 0, "errmsg": "ok"}
+
+    monkeypatch.setattr(notify.requests, "post", lambda *args, **kwargs: FakeResponse())
+    monkeypatch.setattr(notify.time, "sleep", lambda _seconds: None)
+
+    result = notify.send_dingtalk_markdown(
+        "日报",
+        "内容",
+        webhook="https://oapi.dingtalk.com/robot/send?access_token=test",
+        secret="",
+        max_attempts=3,
+    )
+
+    assert len(attempts) == 2
+    assert result["errcode"] == 0
+
+
 def test_send_dingtalk_markdown_chunks_adds_part_numbers(monkeypatch):
     notify = require_module("stock_quant.notify")
     sent = []
@@ -130,3 +159,26 @@ def test_send_dingtalk_markdown_chunks_adds_part_numbers(monkeypatch):
     assert len(result) > 1
     assert sent[0][0].startswith("盘前操作建议 1/")
     assert sent[-1][0].startswith(f"盘前操作建议 {len(sent)}/")
+
+
+def test_send_dingtalk_markdown_chunks_uses_receipts_to_avoid_duplicates(monkeypatch, tmp_path):
+    notify = require_module("stock_quant.notify")
+    sent = []
+
+    def fake_send(title, markdown, **kwargs):
+        sent.append((title, markdown))
+        return {"errcode": 0, "errmsg": "ok"}
+
+    monkeypatch.setattr(notify, "send_dingtalk_markdown", fake_send)
+    options = {
+        "receipt_dir": tmp_path,
+        "delivery_key": "premarket-2026-07-24-message-1",
+        "webhook": "https://example.com",
+    }
+
+    first = notify.send_dingtalk_markdown_chunks("盘前操作建议", "内容", **options)
+    second = notify.send_dingtalk_markdown_chunks("盘前操作建议", "内容已更新", **options)
+
+    assert len(sent) == 1
+    assert first[0]["errcode"] == 0
+    assert second[0]["skipped"] is True

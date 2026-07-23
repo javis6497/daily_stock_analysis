@@ -6,6 +6,7 @@ import hmac
 import os
 import time
 import urllib.parse
+from pathlib import Path
 from typing import Any, Callable
 
 import requests
@@ -44,7 +45,7 @@ def send_dingtalk_markdown(
     secret: str | None = None,
     dry_run: bool = False,
     timeout: int = 10,
-    max_attempts: int = 3,
+    max_attempts: int = 5,
     before_attempt: Callable[[], None] | None = None,
 ) -> dict[str, Any]:
     webhook = webhook or os.environ.get("DINGTALK_WEBHOOK")
@@ -59,6 +60,7 @@ def send_dingtalk_markdown(
     if max_attempts < 1:
         raise ValueError("max_attempts must be positive")
 
+    last_error: Exception | None = None
     for attempt in range(1, max_attempts + 1):
         if before_attempt:
             before_attempt()
@@ -70,17 +72,20 @@ def send_dingtalk_markdown(
             )
             response.raise_for_status()
             result = response.json()
+            if not isinstance(result, dict):
+                raise RuntimeError("DingTalk send failed: invalid JSON response")
             if int(result.get("errcode", 0)) != 0:
                 raise RuntimeError(
                     f"DingTalk send failed: errcode={result.get('errcode')} errmsg={result.get('errmsg')}"
                 )
             return result
-        except requests.RequestException:
+        except (requests.RequestException, RuntimeError) as exc:
+            last_error = exc
             if attempt == max_attempts:
                 raise
-            time.sleep(min(2 ** (attempt - 1), 4))
+            time.sleep(min(2 ** (attempt - 1), 8))
 
-    raise RuntimeError("DingTalk send failed without a response")
+    raise RuntimeError("DingTalk send failed without a response") from last_error
 
 
 def split_markdown_chunks(markdown: str, max_chars: int = 3500) -> list[str]:
@@ -115,24 +120,46 @@ def send_dingtalk_markdown_chunks(
     dry_run: bool = False,
     timeout: int = 10,
     max_chars: int = 3500,
-    max_attempts: int = 3,
+    max_attempts: int = 5,
     before_attempt: Callable[[], None] | None = None,
+    receipt_dir: str | Path | None = None,
+    delivery_key: str = "",
 ) -> list[dict[str, Any]]:
     chunks = split_markdown_chunks(markdown, max_chars=max_chars)
     total = len(chunks)
     results: list[dict[str, Any]] = []
     for index, chunk in enumerate(chunks, start=1):
         chunk_title = title if total == 1 else f"{title} {index}/{total}"
-        results.append(
-            send_dingtalk_markdown(
-                chunk_title,
-                chunk,
-                webhook=webhook,
-                secret=secret,
-                dry_run=dry_run,
-                timeout=timeout,
-                max_attempts=max_attempts,
-                before_attempt=before_attempt,
-            )
+        receipt_path = _delivery_receipt_path(receipt_dir, delivery_key, index)
+        if receipt_path is not None and receipt_path.exists() and not dry_run:
+            results.append({"errcode": 0, "errmsg": "already sent", "skipped": True})
+            continue
+        result = send_dingtalk_markdown(
+            chunk_title,
+            chunk,
+            webhook=webhook,
+            secret=secret,
+            dry_run=dry_run,
+            timeout=timeout,
+            max_attempts=max_attempts,
+            before_attempt=before_attempt,
         )
+        results.append(result)
+        if receipt_path is not None and not dry_run:
+            receipt_path.parent.mkdir(parents=True, exist_ok=True)
+            receipt_path.write_text(
+                f"title={chunk_title}\npart={index}/{total}\n",
+                encoding="utf-8",
+            )
     return results
+
+
+def _delivery_receipt_path(
+    receipt_dir: str | Path | None,
+    delivery_key: str,
+    chunk_index: int,
+) -> Path | None:
+    if not receipt_dir or not delivery_key:
+        return None
+    digest = hashlib.sha256(delivery_key.encode("utf-8")).hexdigest()[:20]
+    return Path(receipt_dir) / "messages" / f"{digest}-part-{chunk_index}.sent"

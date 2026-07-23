@@ -60,3 +60,6 @@ def test_build_portfolio_summary_calculates_weights_pnl_and_limit_warnings():
     assert summary.positions[0].weight > 0.5
     assert summary.positions[0].max_weight_breached is True
     assert "超过最大仓位" in summary.warnings[0]
+    assert summary.concentration_index > 0.5
+    assert 1 < summary.effective_positions < 2
+    assert summary.largest_position_weight == summary.positions[0].weight

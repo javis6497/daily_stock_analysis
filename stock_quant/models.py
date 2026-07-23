@@ -229,6 +229,10 @@ class PortfolioSummary:
     total_pnl_pct: float
     positions: tuple[PortfolioPosition, ...] = field(default_factory=tuple)
     warnings: tuple[str, ...] = field(default_factory=tuple)
+    concentration_index: float = 0.0
+    effective_positions: float = 0.0
+    largest_position_weight: float = 0.0
+    dominant_exposure: str | None = None
 
 
 @dataclass(frozen=True)
@@ -258,6 +262,10 @@ class BacktestSummary:
     benchmark_return: float | None = None
     average_excess_return: float | None = None
     estimated_cost_rate: float | None = None
+    average_sharpe_ratio: float | None = None
+    total_trade_count: int = 0
+    decision_lag_bars: int = 1
+    lookahead_safe: bool = True
 
 
 @dataclass(frozen=True)

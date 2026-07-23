@@ -23,4 +23,5 @@ jobs:
       scheduled_run: ${{ github.event_name == 'schedule' }}
       delivery_target: "09:37"
       delivery_tolerance_minutes: 5
+      silent_failure: ${{ github.event_name == 'schedule' }}
     secrets: inherit

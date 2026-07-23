@@ -17,6 +17,9 @@ def test_build_backtest_summary_contains_quality_metrics():
     assert summary.max_drawdown >= 0
     assert 0 <= summary.signal_success_rate <= 1
     assert "偏强" in summary.summary
+    assert summary.lookahead_safe is True
+    assert summary.decision_lag_bars == 1
+    assert summary.total_trade_count >= 1
 
 
 def test_build_monthly_reviews_calculates_rolling_30_day_change():

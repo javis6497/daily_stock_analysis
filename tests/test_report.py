@@ -184,7 +184,8 @@ def test_render_action_report_contains_portfolio_freshness_and_backtest_summary(
     assert "最新行情日期：2026-07-03" in markdown
     assert "获取失败：017731" in markdown
     assert "回测摘要" in markdown
-    assert "信号成功率：66.00%" in markdown
+    assert "方向命中率：66.00%" in markdown
+    assert "防未来函数：通过" in markdown
 
 
 def test_render_daily_news_report_contains_only_news_not_action_advice():

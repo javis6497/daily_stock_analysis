@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import csv
 import json
+import os
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, is_dataclass
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +13,7 @@ from .alerts import Alert
 from .models import Bar, CandidateScore, Instrument, MarketEnvironment, PortfolioSummary, Signal, ThesisReview
 from .portfolio import build_portfolio_position, implied_cost_price
 from .report_audit import ReportAuditResult
+from .strategy import STRATEGY_VERSION
 
 
 def write_signal_ledger(
@@ -35,8 +37,14 @@ def write_signal_ledger(
     candidates_csv_name = f"{stem}-candidates.csv"
 
     payload = {
+        "schema_version": 2,
+        "generated_at": datetime.now(UTC).isoformat(),
+        "strategy_version": STRATEGY_VERSION,
+        "run_id": os.environ.get("GITHUB_RUN_ID") or None,
+        "commit_sha": os.environ.get("GITHUB_SHA") or None,
         "session": session,
         "report_date": report_date.isoformat(),
+        "data_as_of": _latest_price_date(price_history),
         "market_environment": _clean(market_environment),
         "portfolio_summary": _clean(portfolio_summary),
         "signals": [_signal_row(signal) for signal in signals],
@@ -114,6 +122,13 @@ def _signal_row(signal: Signal) -> dict[str, Any]:
         "buy_zone_upper": signal.buy_zone.upper,
         "stop_loss": signal.stop_loss,
         "take_profit": signal.take_profit,
+        "ma20": signal.ma20,
+        "ma60": signal.ma60,
+        "rsi": signal.rsi,
+        "macd_histogram": signal.macd_histogram,
+        "atr": signal.atr,
+        "reasons": "；".join(signal.reasons),
+        "risks": "；".join(signal.risks),
     }
 
 
@@ -143,6 +158,15 @@ def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
         writer = csv.DictWriter(handle, fieldnames=list(rows[0].keys()))
         writer.writeheader()
         writer.writerows(rows)
+
+
+def _latest_price_date(
+    price_history: Mapping[Instrument, Sequence[Bar]] | None,
+) -> str | None:
+    if not price_history:
+        return None
+    dates = [bars[-1].date for bars in price_history.values() if bars]
+    return max(dates).isoformat() if dates else None
 
 
 def _clean(value: Any) -> Any:
