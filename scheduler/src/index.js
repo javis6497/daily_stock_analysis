@@ -30,6 +30,7 @@ export async function dispatchWorkflow(env, schedule, fetchImpl = fetch) {
     method: "PUT",
     headers
   });
+  console.log(`scheduler enable session=${schedule.session} http=${enableResponse.status}`);
   if (![204, 409].includes(enableResponse.status)) {
     throw new Error(`GitHub workflow enable failed: HTTP ${enableResponse.status}`);
   }
@@ -48,6 +49,7 @@ export async function dispatchWorkflow(env, schedule, fetchImpl = fetch) {
       }
     })
   });
+  console.log(`scheduler dispatch session=${schedule.session} http=${dispatchResponse.status}`);
   if (dispatchResponse.status !== 204) {
     throw new Error(`GitHub workflow dispatch failed: HTTP ${dispatchResponse.status}`);
   }
@@ -63,10 +65,14 @@ export async function dispatchWithRetry(
   let lastError;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
+      console.log(`scheduler dispatch attempt=${attempt}/${maxAttempts} session=${schedule.session}`);
       await dispatchWorkflow(env, schedule, fetchImpl);
       return;
     } catch (error) {
       lastError = error;
+      console.error(
+        `scheduler dispatch attempt failed=${attempt}/${maxAttempts} session=${schedule.session} error=${error.message || String(error)}`
+      );
       if (attempt < maxAttempts) {
         await sleep(1000 * 2 ** (attempt - 1));
       }
@@ -97,8 +103,16 @@ export async function notifySchedulerFailure(env, schedule, error, fetchImpl = f
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload)
   });
-  if (!response.ok) {
-    throw new Error(`DingTalk scheduler alert failed: HTTP ${response.status}`);
+  let body = null;
+  try {
+    body = await response.json();
+  } catch {
+    // non-JSON body; fall through to the HTTP status check
+  }
+  if (!response.ok || (body && body.errcode !== 0)) {
+    throw new Error(
+      `DingTalk scheduler alert failed: HTTP ${response.status} errcode=${body && body.errcode} errmsg=${body && body.errmsg}`
+    );
   }
 }
 

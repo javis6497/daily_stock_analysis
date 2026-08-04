@@ -414,6 +414,37 @@ def render_failure_report(
     return "\n".join(lines)
 
 
+def render_missed_delivery_report(
+    report_date: str,
+    session: str,
+    target: str,
+    tolerance: int,
+    message: str = "",
+) -> str:
+    labels = {
+        "premarket": "盘前量化日报",
+        "postmarket": "盘后量化复盘",
+        "fund_action": "14:00基金操作提醒",
+        "weekend_news": "周末量化周报",
+    }
+    lines = [
+        f"# 量化日报错过发送窗口 - {report_date}",
+        "",
+        f"- 任务类型：{labels.get(session, session)}",
+        f"- 目标发送时间：{target}（北京时间，允许前后 {tolerance} 分钟）",
+        "- 状态：GitHub Actions 任务到达时已错过发送窗口，本次报告未发送。",
+    ]
+    if message:
+        lines.append(f"- 详细信息：{message}")
+    lines.extend(
+        [
+            "",
+            f"报告只在目标时间前后 {tolerance} 分钟内发送，以保证内容时效。若连续错过，请确认 Cloudflare Worker 外部调度器是否正常触发；也可以手动触发一次。",
+        ]
+    )
+    return "\n".join(lines)
+
+
 def render_alert_report(
     report_date: date,
     session: str,

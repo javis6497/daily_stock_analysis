@@ -7,12 +7,14 @@ def _workflow_text() -> str:
     return Path(".github/workflows/daily-report.yml").read_text(encoding="utf-8")
 
 
-def test_scheduled_workflows_are_split_by_session():
+def test_scheduled_workflows_have_single_fallback_cron():
+    # The Cloudflare Worker is the primary on-time trigger; each wrapper keeps a
+    # single GitHub `schedule` cron as a fallback when the Worker is down.
     expected = {
-        "premarket-report.yml": ("premarket", "08:37", ("18 0 * * 1-5", "23 0 * * 1-5", "28 0 * * 1-5", "33 0 * * 1-5", "38 0 * * 1-5")),
-        "fund-action-report.yml": ("fund_action", "14:07", ("48 5 * * 1-5", "53 5 * * 1-5", "58 5 * * 1-5", "3 6 * * 1-5", "8 6 * * 1-5")),
-        "postmarket-report.yml": ("postmarket", "16:37", ("18 8 * * 1-5", "23 8 * * 1-5", "28 8 * * 1-5", "33 8 * * 1-5", "38 8 * * 1-5")),
-        "weekend-report.yml": ("weekend_news", "09:37", ("18 1 * * 6,0", "23 1 * * 6,0", "28 1 * * 6,0", "33 1 * * 6,0", "38 1 * * 6,0")),
+        "premarket-report.yml": ("premarket", "08:37", ("29 0 * * 1-5",)),
+        "fund-action-report.yml": ("fund_action", "14:07", ("59 5 * * 1-5",)),
+        "postmarket-report.yml": ("postmarket", "16:37", ("29 8 * * 1-5",)),
+        "weekend-report.yml": ("weekend_news", "09:37", ("29 1 * * 6,0",)),
     }
 
     for filename, (session, target, crons) in expected.items():
@@ -40,7 +42,7 @@ def test_workflow_skips_duplicate_scheduled_session_with_persistent_delivery_sta
     workflow = Path(".github/workflows/daily-report.yml").read_text(encoding="utf-8")
 
     assert "concurrency:" in workflow
-    assert "group: daily-quant-report-${{ github.ref }}" in workflow
+    assert "group: daily-quant-report-${{ inputs.session }}-${{ github.ref }}" in workflow
     assert "cancel-in-progress: false" in workflow
     assert "REPORT_DATE" in workflow
     assert "actions/cache/restore@v5" in workflow
@@ -90,6 +92,24 @@ def test_workflow_notifies_dingtalk_when_report_job_fails():
     assert "env.DINGTALK_WEBHOOK != ''" in workflow
     assert "python -m stock_quant notify-failure" in workflow
     assert "--run-url" in workflow
+
+
+def test_workflow_scheduled_failure_notification_is_marker_guarded():
+    workflow = _workflow_text()
+
+    assert "((env.SCHEDULED_RUN != 'true' && failure()) || env.SCHEDULED_RUN == 'true')" in workflow
+    assert 'if [ -f ".report-state/${DELIVERY_KEY}.complete" ]' in workflow
+    assert 'if [ -f ".report-state/${DELIVERY_KEY}.notified" ]' in workflow
+    assert 'touch ".report-state/${DELIVERY_KEY}.notified"' in workflow
+
+
+def test_workflow_logs_scheduling_drift_for_scheduled_runs():
+    workflow = _workflow_text()
+
+    assert "Log scheduling drift" in workflow
+    assert "if: env.SCHEDULED_RUN == 'true'" in workflow
+    assert "delivery_target=$DELIVERY_TARGET" in workflow
+    assert "job_start_beijing" in workflow
 
 
 def test_workflow_archives_generated_reports_as_artifact():

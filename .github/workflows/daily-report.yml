@@ -61,7 +61,7 @@ on:
         type: boolean
 
 concurrency:
-  group: daily-quant-report-${{ github.ref }}
+  group: daily-quant-report-${{ inputs.session }}-${{ github.ref }}
   cancel-in-progress: false
 
 permissions:
@@ -121,6 +121,16 @@ jobs:
           echo "state_prefix=report-state-${SESSION}-${report_date}-" >> "$GITHUB_OUTPUT"
           echo "DELIVERY_KEY=${SESSION}-${report_date}" >> "$GITHUB_ENV"
           mkdir -p .report-state
+
+      - name: Log scheduling drift
+        if: env.SCHEDULED_RUN == 'true'
+        shell: bash
+        run: |
+          now_utc="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          now_bj="$(TZ=Asia/Shanghai date +%Y-%m-%dT%H:%M:%S%z)"
+          echo "delivery_target=$DELIVERY_TARGET (Beijing); window=+/-${DELIVERY_TOLERANCE_MINUTES:-5} minutes"
+          echo "job_start_utc=$now_utc job_start_beijing=$now_bj"
+          echo "scheduler drift: compare job_start_beijing against the delivery target window"
 
       - name: Restore scheduled delivery state
         id: delivery-state-cache
@@ -240,10 +250,26 @@ jobs:
           key: market-data-${{ env.REPORT_DATE }}-${{ env.SESSION }}-${{ github.run_id }}
 
       - name: Notify failure
-        if: failure() && env.DINGTALK_WEBHOOK != '' && (env.SCHEDULED_RUN != 'true' || steps.delivery-marker.outcome != 'success') && (env.SCHEDULED_RUN != 'true' || steps.delivery-state.outputs.completed != 'true')
+        if: env.DINGTALK_WEBHOOK != '' && ((env.SCHEDULED_RUN != 'true' && failure()) || env.SCHEDULED_RUN == 'true')
         shell: bash
         run: |
           report_date="${REPORT_DATE:-$(TZ=Asia/Shanghai date +%F)}"
           session="${SESSION:-unknown}"
           run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          if [ "$SCHEDULED_RUN" = "true" ]; then
+            # Skip when delivery already completed, or when the report command already reported the miss.
+            if [ -f ".report-state/${DELIVERY_KEY}.complete" ]; then
+              echo "delivery already completed; skipping failure notification"
+              exit 0
+            fi
+            if [ -f ".report-state/${DELIVERY_KEY}.notified" ]; then
+              echo "delivery miss already notified; skipping duplicate"
+              exit 0
+            fi
+          fi
+          echo "Sending failure notification"
           python -m stock_quant notify-failure --session "$session" --report-date "$report_date" --run-url "$run_url" --message "Daily Quant Report failed; target=${DELIVERY_TARGET:-manual}, tolerance=+/-${DELIVERY_TOLERANCE_MINUTES:-5} minutes"
+          if [ "$SCHEDULED_RUN" = "true" ]; then
+            mkdir -p .report-state
+            touch ".report-state/${DELIVERY_KEY}.notified"
+          fi

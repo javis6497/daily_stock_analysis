@@ -2,12 +2,8 @@ name: Postmarket Quant Report
 
 on:
   schedule:
-    # Wake early and redundantly; actual delivery is restricted to Beijing 16:32-16:42.
-    - cron: "18 8 * * 1-5"
-    - cron: "23 8 * * 1-5"
-    - cron: "28 8 * * 1-5"
-    - cron: "33 8 * * 1-5"
-    - cron: "38 8 * * 1-5"
+    # Fallback when the Cloudflare Worker scheduler is down; delivery is restricted to Beijing 16:32-16:42.
+    - cron: "29 8 * * 1-5"
   workflow_dispatch:
 
 permissions:

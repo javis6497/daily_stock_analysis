@@ -181,11 +181,11 @@ python -m stock_quant report --session premarket --config config/watchlist.yml -
 
 工作日 `fund_action` 的目标发送时间为北京时间 14:07，只包含自选基金/ETF，不包含股票、资讯或自选外候选。同一天成功发送后，后续同类触发会自动去重。
 
-仓库仍保留 4 个 GitHub 定时 wrapper 作为备用，但推荐部署 [`scheduler/`](scheduler/README.md) 中的 Cloudflare Worker 作为主时钟。Worker 在目标窗口前 10 分钟和 5 分钟各调用一次核心 workflow，并在调用前自动启用 `Daily Quant Report`。GitHub 端串行执行同一仓库的日报，恢复逐消息发送状态；已完整发送则跳过，部分发送则只补发剩余内容。
+建议部署 [`scheduler/`](scheduler/README.md) 中的 Cloudflare Worker 作为准点主时钟：Worker 在目标窗口前 10 分钟和 5 分钟各调用一次核心 workflow，并在调用前自动启用 `Daily Quant Report`。4 个 GitHub 定时 wrapper 各保留 1 条兜底 cron，仅当 Worker 未部署或失败时兜底。GitHub 端按 session 串行执行日报，恢复逐消息发送状态；已完整发送则跳过，部分发送则只补发剩余内容。
 
-GitHub 官方说明 `schedule` 事件可能因平台高负载而延迟，极端情况下排队任务可能被丢弃。外部时钟、双触发、API 重试和发送回执能显著降低漏发概率，但任何免费托管平台都不能提供绝对准点保证。手动触发默认不受发送时间窗和自动去重限制，方便测试。
+GitHub 官方说明 `schedule` 事件可能因平台高负载而延迟，极端情况下排队任务可能被丢弃。外部时钟、双触发、API 重试和发送回执能显著降低漏发概率，但任何免费托管平台都不能提供绝对准点保证。若定时任务到达时已错过发送窗口，系统不会静默丢弃：会立即向钉钉发送一条"错过发送窗口"通知，说明目标窗口和实际到达时间。手动触发默认不受发送时间窗和自动去重限制，方便测试。
 
-如果数据获取或发送步骤失败，workflow 会尝试发送一条钉钉故障提示。定时运行使用 `silent_failure=true`，内部故障不会把 GitHub workflow 标红，因此不会触发失败邮件；代码提交触发的 CI 仍严格失败。要彻底关闭账号层面的 Actions 邮件，在 GitHub `Settings -> Notifications -> System -> Actions` 选择 `Don't notify`。
+如果数据获取、窗口错过或发送步骤失败，系统会确保发送一条钉钉故障/漏发提示（定时任务用持久化 `.notified` 标记去重，避免多个兜底触发重复通知）。定时运行使用 `silent_failure=true`，内部故障不会把 GitHub workflow 标红，因此不会触发失败邮件；代码提交触发的 CI 仍严格失败。要彻底关闭账号层面的 Actions 邮件，在 GitHub `Settings -> Notifications -> System -> Actions` 选择 `Don't notify`。
 
 每次成功生成报告后，workflow 会上传 `daily-quant-report-<session>-<date>` artifact，里面包含本次 Markdown 报告、结构化 JSON/CSV 台账和 `manifest.json`。台账会记录信号、候选、持仓逻辑复核、报告质检、候选质量画像等结构化字段，便于后续统计信号有效性。
 

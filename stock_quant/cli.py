@@ -13,7 +13,7 @@ from .backtest import run_backtest
 from .calendar import is_cn_trading_day
 from .config import load_config
 from .data import create_provider, fetch_many, resolve_instrument_names
-from .delivery_window import ensure_delivery_window_open, wait_for_delivery_window
+from .delivery_window import DeliveryWindowError, ensure_delivery_window_open, wait_for_delivery_window
 from .freshness import build_data_freshness
 from .alerts import build_alerts
 from .dashboard import generate_dashboard
@@ -30,6 +30,7 @@ from .ranking import rank_candidates
 from .report_audit import audit_report
 from .report import (
     render_failure_report,
+    render_missed_delivery_report,
     render_alert_report,
     render_action_report,
     render_daily_news_report,
@@ -104,6 +105,8 @@ def _run_report(args: argparse.Namespace) -> int:
                 [("量化日报跳过", message)],
                 send=True,
                 dry_run=args.dry_run,
+                session=args.session,
+                report_date=report_day,
                 delivery_target=args.delivery_target,
                 delivery_tolerance_minutes=args.delivery_tolerance_minutes,
                 timezone_name=app_config.timezone,
@@ -211,6 +214,8 @@ def _run_report(args: argparse.Namespace) -> int:
         messages,
         send=args.send,
         dry_run=args.dry_run,
+        session=args.session,
+        report_date=report_day,
         delivery_target=args.delivery_target,
         delivery_tolerance_minutes=args.delivery_tolerance_minutes,
         timezone_name=app_config.timezone,
@@ -278,6 +283,8 @@ def _run_weekend_news_report(args: argparse.Namespace, app_config, report_day: d
         messages,
         send=args.send,
         dry_run=args.dry_run,
+        session=args.session,
+        report_date=report_day,
         delivery_target=args.delivery_target,
         delivery_tolerance_minutes=args.delivery_tolerance_minutes,
         timezone_name=app_config.timezone,
@@ -293,6 +300,8 @@ def _run_fund_action_report(args: argparse.Namespace, app_config, report_day: da
                 [("基金操作提醒跳过", message)],
                 send=True,
                 dry_run=args.dry_run,
+                session=args.session,
+                report_date=report_day,
                 delivery_target=args.delivery_target,
                 delivery_tolerance_minutes=args.delivery_tolerance_minutes,
                 timezone_name=app_config.timezone,
@@ -364,6 +373,8 @@ def _run_fund_action_report(args: argparse.Namespace, app_config, report_day: da
         messages,
         send=args.send,
         dry_run=args.dry_run,
+        session=args.session,
+        report_date=report_day,
         delivery_target=args.delivery_target,
         delivery_tolerance_minutes=args.delivery_tolerance_minutes,
         timezone_name=app_config.timezone,
@@ -407,10 +418,38 @@ def _resolve_display_names(app_config, provider_name: str):
     )
 
 
+def _notify_missed_delivery(
+    session: str,
+    report_date: date | None,
+    delivery_target: str,
+    delivery_tolerance_minutes: int,
+    exc: Exception,
+) -> None:
+    journal_dir = os.environ.get("DELIVERY_JOURNAL_DIR")
+    delivery_key = os.environ.get("DELIVERY_KEY", "")
+    if journal_dir and delivery_key:
+        marker = Path(journal_dir) / f"{delivery_key}.notified"
+        if marker.exists():
+            return
+    markdown = render_missed_delivery_report(
+        report_date=(report_date or date.today()).isoformat(),
+        session=session,
+        target=delivery_target,
+        tolerance=delivery_tolerance_minutes,
+        message=str(exc),
+    )
+    send_dingtalk_markdown("量化日报错过发送窗口", markdown, dry_run=False)
+    if journal_dir and delivery_key:
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text(f"notified at {datetime.now().isoformat()}\n", encoding="utf-8")
+
+
 def _send_messages(
     messages: list[tuple[str, str]],
     send: bool,
     dry_run: bool,
+    session: str = "",
+    report_date: date | None = None,
     delivery_target: str = "",
     delivery_tolerance_minutes: int = 5,
     timezone_name: str = "Asia/Shanghai",
@@ -418,11 +457,21 @@ def _send_messages(
     delivery_window = None
     before_attempt = None
     if send and not dry_run and delivery_target:
-        delivery_window = wait_for_delivery_window(
-            delivery_target,
-            tolerance_minutes=delivery_tolerance_minutes,
-            timezone_name=timezone_name,
-        )
+        try:
+            delivery_window = wait_for_delivery_window(
+                delivery_target,
+                tolerance_minutes=delivery_tolerance_minutes,
+                timezone_name=timezone_name,
+            )
+        except DeliveryWindowError as exc:
+            _notify_missed_delivery(
+                session=session,
+                report_date=report_date,
+                delivery_target=delivery_target,
+                delivery_tolerance_minutes=delivery_tolerance_minutes,
+                exc=exc,
+            )
+            raise
         before_attempt = lambda: ensure_delivery_window_open(delivery_window)
 
     for idx, (title, markdown) in enumerate(messages):

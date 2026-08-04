@@ -256,3 +256,21 @@ def test_render_fund_action_report_contains_only_fund_signals():
     assert "平安银行" not in markdown
     assert "相关资讯" not in markdown
     assert "自选外量化候选" not in markdown
+
+
+def test_render_missed_delivery_report_includes_window_and_session():
+    report = require_module("stock_quant.report")
+
+    markdown = report.render_missed_delivery_report(
+        report_date="2026-08-04",
+        session="premarket",
+        target="08:37",
+        tolerance=5,
+        message="missed delivery window: now=2026-08-04T08:45:00 deadline=2026-08-04T08:42:00",
+    )
+
+    assert "量化日报错过发送窗口" in markdown
+    assert "盘前量化日报" in markdown
+    assert "08:37" in markdown
+    assert "前后 5 分钟" in markdown
+    assert "missed delivery window" in markdown

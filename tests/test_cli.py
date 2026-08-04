@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from datetime import date
 from pathlib import Path
+
+import pytest
 
 
 def test_cli_report_dry_run_generates_premarket_report(tmp_path):
@@ -254,3 +257,106 @@ def test_dashboard_link_is_inserted_before_disclaimer():
 
     assert "[点击查看可折叠持仓、K线与技术指标]" in markdown
     assert markdown.index("## 完整图表") < markdown.index("## 免责声明")
+
+
+def test_notify_missed_delivery_sends_message_and_writes_marker(monkeypatch, tmp_path):
+    cli = __import__("stock_quant.cli", fromlist=["cli"])
+    from stock_quant.delivery_window import DeliveryWindowError
+
+    sent = []
+    monkeypatch.setattr(
+        cli,
+        "send_dingtalk_markdown",
+        lambda title, markdown, dry_run=False: sent.append((title, markdown, dry_run)),
+    )
+
+    marker_dir = tmp_path / ".report-state"
+    marker_dir.mkdir()
+    monkeypatch.setenv("DELIVERY_JOURNAL_DIR", str(marker_dir))
+    monkeypatch.setenv("DELIVERY_KEY", "premarket-2026-08-04")
+
+    cli._notify_missed_delivery(
+        session="premarket",
+        report_date=date(2026, 8, 4),
+        delivery_target="08:37",
+        delivery_tolerance_minutes=5,
+        exc=DeliveryWindowError(
+            "missed delivery window: now=2026-08-04T08:45:00 deadline=2026-08-04T08:42:00"
+        ),
+    )
+
+    assert len(sent) == 1
+    title, markdown, dry_run = sent[0]
+    assert title == "量化日报错过发送窗口"
+    assert "盘前量化日报" in markdown
+    assert "missed delivery window" in markdown
+    assert dry_run is False
+    assert (marker_dir / "premarket-2026-08-04.notified").exists()
+
+
+def test_notify_missed_delivery_skips_when_marker_exists(monkeypatch, tmp_path):
+    cli = __import__("stock_quant.cli", fromlist=["cli"])
+    from stock_quant.delivery_window import DeliveryWindowError
+
+    sent = []
+    monkeypatch.setattr(
+        cli,
+        "send_dingtalk_markdown",
+        lambda title, markdown, dry_run=False: sent.append(title),
+    )
+
+    marker_dir = tmp_path / ".report-state"
+    marker_dir.mkdir()
+    (marker_dir / "premarket-2026-08-04.notified").write_text(
+        "already notified\n", encoding="utf-8"
+    )
+    monkeypatch.setenv("DELIVERY_JOURNAL_DIR", str(marker_dir))
+    monkeypatch.setenv("DELIVERY_KEY", "premarket-2026-08-04")
+
+    cli._notify_missed_delivery(
+        session="premarket",
+        report_date=date(2026, 8, 4),
+        delivery_target="08:37",
+        delivery_tolerance_minutes=5,
+        exc=DeliveryWindowError("missed delivery window"),
+    )
+
+    assert sent == []
+
+
+def test_send_messages_notifies_and_reraises_on_missed_window(monkeypatch, tmp_path):
+    cli = __import__("stock_quant.cli", fromlist=["cli"])
+    from stock_quant.delivery_window import DeliveryWindowError
+
+    sent = []
+    marker_dir = tmp_path / ".report-state"
+    marker_dir.mkdir()
+    monkeypatch.setenv("DELIVERY_JOURNAL_DIR", str(marker_dir))
+    monkeypatch.setenv("DELIVERY_KEY", "premarket-2026-08-04")
+    monkeypatch.setattr(
+        cli,
+        "send_dingtalk_markdown",
+        lambda title, markdown, dry_run=False: sent.append((title, markdown)),
+    )
+
+    def boom(target, tolerance_minutes=5, timezone_name="Asia/Shanghai", now_fn=None, sleep_fn=None):
+        raise DeliveryWindowError(
+            "missed delivery window: now=2026-08-04T08:45:00 deadline=2026-08-04T08:42:00"
+        )
+
+    monkeypatch.setattr(cli, "wait_for_delivery_window", boom)
+
+    with pytest.raises(DeliveryWindowError):
+        cli._send_messages(
+            [("盘前操作建议", "action")],
+            send=True,
+            dry_run=False,
+            session="premarket",
+            report_date=date(2026, 8, 4),
+            delivery_target="08:37",
+            delivery_tolerance_minutes=5,
+        )
+
+    assert len(sent) == 1
+    assert sent[0][0] == "量化日报错过发送窗口"
+    assert (marker_dir / "premarket-2026-08-04.notified").exists()

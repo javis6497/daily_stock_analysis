@@ -56,6 +56,17 @@ Invoke-RestMethod -Method Post `
 
 Worker 对 GitHub API 失败最多重试 3 次；每个时间段还有两次独立触发。GitHub 端会记录每条消息的每个分片，后续重跑只补发未成功的部分。三次 API 重试全部失败时，Worker 直接向钉钉发送调度器故障提示，不依赖 GitHub 邮件。
 
+## 确认 Worker 已部署并正常运行
+
+如果连续漏发，先按下面的清单排查外部调度器：
+
+1. **访问 `/health`**：浏览器打开 `https://你的Worker地址/health`，应返回 `{"ok":true,"scheduler":"stock-quant-scheduler"}`。若 404，说明 Worker 未部署或路由未命中。
+2. **确认 Cron Triggers 已启用**：Cloudflare Dashboard → Workers & Pages → 你的 Worker → `Settings -> Triggers -> Cron Triggers`，确认 8 条 cron 均为 `Enabled`。
+3. **确认 Secret 未过期**：`Settings -> Variables & Secrets`，确认 `GITHUB_TOKEN` 在有效期内，且该 token 对 `javis6497/daily_stock_analysis` 的 Repository permissions 中 `Actions` 为 `Read and write`。权限不足或过期时 dispatch 会返回非 204，日志出现 `scheduler dispatch failed`。
+4. **查看实时日志**：`Workers -> Logs` 应看到 `scheduler dispatch session=... http=204`。若出现 `http=401`/`http=403`，说明 token 失效或权限不足。
+
+Worker 每次触发都会打印 `scheduler dispatch session=... http=...`；结合 GitHub Actions 日志里的"调度漂移"行（打印目标时间和任务实际启动时间），可以区分是"没触发"还是"触发了但 GitHub 延迟/失败"。
+
 ## 邮件通知
 
 定时任务传入 `silent_failure=true`，内部失败不会把定时 workflow 标记为红色，因此不会产生“失败 workflow”邮件。CI 仍会严格失败，避免错误代码悄悄进入 `main`。
