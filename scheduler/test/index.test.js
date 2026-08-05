@@ -8,15 +8,31 @@ import {
   scheduleForCron
 } from "../src/index.js";
 
-test("maps redundant UTC cron triggers to Beijing report slots", () => {
+test("maps Cloudflare cron triggers to Beijing report slots", () => {
   assert.deepEqual(scheduleForCron("27 0 * * 1-5"), {
     session: "premarket",
     target: "08:37"
   });
-  assert.deepEqual(scheduleForCron("2 6 * * 1-5"), {
+  assert.deepEqual(scheduleForCron("57 5 * * 1-5"), {
     session: "fund_action",
     target: "14:07"
   });
+  assert.deepEqual(scheduleForCron("27 8 * * 1-5"), {
+    session: "postmarket",
+    target: "16:37"
+  });
+  // Weekend day-of-week uses ISO numbering (6=Sat, 7=Sun); Cloudflare
+  // rejects comma lists like "6,0" and the weekday 0.
+  assert.deepEqual(scheduleForCron("27 1 * * 6"), {
+    session: "weekend_news",
+    target: "09:37"
+  });
+  assert.deepEqual(scheduleForCron("27 1 * * 7"), {
+    session: "weekend_news",
+    target: "09:37"
+  });
+  assert.equal(scheduleForCron("27 1 * * 6,0"), null);
+  assert.equal(scheduleForCron("27 1 * * 0"), null);
   assert.equal(scheduleForCron("0 0 * * *"), null);
 });
 

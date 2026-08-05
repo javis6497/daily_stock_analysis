@@ -181,7 +181,7 @@ python -m stock_quant report --session premarket --config config/watchlist.yml -
 
 工作日 `fund_action` 的目标发送时间为北京时间 14:07，只包含自选基金/ETF，不包含股票、资讯或自选外候选。同一天成功发送后，后续同类触发会自动去重。
 
-建议部署 [`scheduler/`](scheduler/README.md) 中的 Cloudflare Worker 作为准点主时钟：Worker 在目标窗口前 10 分钟和 5 分钟各调用一次核心 workflow，并在调用前自动启用 `Daily Quant Report`。4 个 GitHub 定时 wrapper 各保留 1 条兜底 cron，仅当 Worker 未部署或失败时兜底。GitHub 端按 session 串行执行日报，恢复逐消息发送状态；已完整发送则跳过，部分发送则只补发剩余内容。
+建议部署 [`scheduler/`](scheduler/README.md) 中的 Cloudflare Worker 作为准点主时钟：Worker 在目标窗口前 10 分钟调用一次核心 workflow（Cloudflare 免费版每账号限 5 条 cron），并在调用前自动启用 `Daily Quant Report`。4 个 GitHub 定时 wrapper 各保留 1 条兜底 cron，仅当 Worker 未部署或失败时兜底。GitHub 端按 session 串行执行日报，恢复逐消息发送状态；已完整发送则跳过，部分发送则只补发剩余内容。
 
 GitHub 官方说明 `schedule` 事件可能因平台高负载而延迟，极端情况下排队任务可能被丢弃。外部时钟、双触发、API 重试和发送回执能显著降低漏发概率，但任何免费托管平台都不能提供绝对准点保证。若定时任务到达时已错过发送窗口，系统不会静默丢弃：会立即向钉钉发送一条"错过发送窗口"通知，说明目标窗口和实际到达时间。手动触发默认不受发送时间窗和自动去重限制，方便测试。
 
