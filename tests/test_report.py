@@ -274,3 +274,59 @@ def test_render_missed_delivery_report_includes_window_and_session():
     assert "08:37" in markdown
     assert "前后 5 分钟" in markdown
     assert "missed delivery window" in markdown
+
+
+def test_render_action_report_leads_with_action_points_block():
+    config_mod = require_module("stock_quant.config")
+    models = require_module("stock_quant.models")
+    report = require_module("stock_quant.report")
+
+    instrument = models.Instrument(symbol="000001", name="平安银行", market="cn", asset_type="stock")
+    signal = models.Signal(
+        instrument=instrument,
+        status="偏强",
+        action="回踩观察",
+        last_close=11.2,
+        buy_zone=models.PriceRange(10.8, 11.0),
+        stop_loss=10.5,
+        take_profit=12.5,
+        confidence=0.8,
+        reasons=("趋势向上",),
+        risks=(),
+    )
+    candidate = models.CandidateScore(
+        instrument=models.Instrument(symbol="510300", name="沪深300ETF", market="cn", asset_type="etf"),
+        score=0.85,
+        group="宽基",
+        reasons=("资金流入", "趋势修复"),
+        signal=models.Signal(
+            instrument=models.Instrument(symbol="510300", name="沪深300ETF", market="cn", asset_type="etf"),
+            status="偏强",
+            action="关注",
+            last_close=3.6,
+            buy_zone=models.PriceRange(3.5, 3.6),
+            stop_loss=3.4,
+            take_profit=4.0,
+            confidence=0.7,
+            reasons=("资金流入",),
+            risks=(),
+        ),
+    )
+
+    markdown = report.render_action_report(
+        session="premarket",
+        report_date=date(2026, 8, 5),
+        config=config_mod.AppConfig(watchlist=[instrument]),
+        signals=[signal],
+        candidates=[candidate],
+    )
+
+    assert "## 操作要点" in markdown
+    assert markdown.index("## 操作要点") < markdown.index("## 市场环境")
+    assert "平安银行(000001)" in markdown
+    assert "动作:持有" in markdown
+    assert "风险位:10.5000" in markdown
+    assert "止盈:12.5000" in markdown
+    assert "今日关注（自选外候选）" in markdown
+    assert "沪深300ETF(510300)" in markdown
+    assert "理由:资金流入；趋势修复" in markdown

@@ -82,6 +82,13 @@ def render_action_report(
         f"- 推送口径：量化研究信号 + 风险提示 + 人工确认",
         "",
     ]
+    lines.extend(
+        _render_action_points_lines(
+            signals,
+            candidates if session != "postmarket" else None,
+            include_buy_zone=(session != "postmarket"),
+        )
+    )
     if session == "postmarket":
         return _render_postmarket_action_report(
             lines,
@@ -262,6 +269,7 @@ def render_fund_action_report(
         "- 数据口径：基于当前可用最新净值/行情；如配置代理 ETF/指数，会显示 14:00 盘中估算。",
         "",
     ]
+    lines.extend(_render_action_points_lines(fund_signals, None, include_buy_zone=True))
     if market_environment is not None:
         lines.append(
             f"- 盘中背景：{market_environment.status} / {market_environment.risk_level}；{market_environment.position_bias}"
@@ -551,13 +559,10 @@ def _backtest_summary_lines(backtest_summary: BacktestSummary | None) -> list[st
     lines.extend(
         [
             f"- 覆盖标的：{backtest_summary.instrument_count}",
-            f"- 平均区间收益：{backtest_summary.average_period_return:.2%}",
-            f"- 策略扣费后平均净收益：{_pct(backtest_summary.average_net_return)}",
-            f"- 基准收益：{_pct(backtest_summary.benchmark_return)}；平均超额：{_pct(backtest_summary.average_excess_return)}",
-            f"- 实际换手估算成本：{_pct(backtest_summary.estimated_cost_rate)}",
-            f"- 策略最大回撤：{backtest_summary.max_drawdown:.2%}；平均夏普：{_fmt(backtest_summary.average_sharpe_ratio)}",
-            f"- 方向命中率：{backtest_summary.signal_success_rate:.2%}；交易次数：{backtest_summary.total_trade_count}",
-            f"- 防未来函数：{'通过' if backtest_summary.lookahead_safe else '未通过'}；决策滞后：{backtest_summary.decision_lag_bars} 根 K 线",
+            f"- 平均净收益：{_pct(backtest_summary.average_net_return)}；"
+            f"方向命中率：{backtest_summary.signal_success_rate:.2%}；"
+            f"最大回撤：{backtest_summary.max_drawdown:.2%}",
+            f"- 防未来函数：{'通过' if backtest_summary.lookahead_safe else '未通过'}",
             f"- 结论：{backtest_summary.summary}",
         ]
     )
@@ -781,3 +786,63 @@ def _monthly_review_note(status: str) -> str:
     if status == "偏弱":
         return "月度表现偏弱，优先控制仓位和风险位。"
     return "月度方向未完全确认，等待趋势进一步清晰。"
+
+
+def _short_action_label(signal: Signal) -> str:
+    if signal.stop_loss > 0 and signal.last_close <= signal.stop_loss:
+        return "止损减仓"
+    if signal.status == "偏弱":
+        return "减仓观察"
+    if signal.stop_loss > 0 and signal.last_close <= signal.stop_loss * 1.03:
+        return "防守"
+    if signal.take_profit > 0 and signal.last_close >= signal.take_profit * 0.97:
+        return "分批止盈"
+    if signal.status == "偏强":
+        return "持有"
+    return "观察"
+
+
+def _action_point_line(signal: Signal, include_buy_zone: bool = True) -> str:
+    instrument = signal.instrument
+    parts = [
+        f"{instrument.name}({instrument.symbol})",
+        f"动作:{_short_action_label(signal)}",
+        f"最新价/净值:{signal.last_close:.4f}",
+    ]
+    if include_buy_zone:
+        parts.append(f"观察区:{signal.buy_zone.lower:.4f}-{signal.buy_zone.upper:.4f}")
+    if signal.stop_loss > 0:
+        parts.append(f"风险位:{signal.stop_loss:.4f}(距离{_pct(signal.last_close / signal.stop_loss - 1)})")
+    if signal.take_profit > 0:
+        parts.append(f"止盈:{signal.take_profit:.4f}")
+    return "- " + "｜".join(parts)
+
+
+def _candidate_point_line(candidate: CandidateScore) -> str:
+    signal = candidate.signal
+    reason = "；".join(candidate.reasons[:2]) if candidate.reasons else candidate.group
+    return (
+        f"- {candidate.instrument.name}({candidate.instrument.symbol}) "
+        f"综合分{candidate.score:.2f}｜观察区:{signal.buy_zone.lower:.4f}-{signal.buy_zone.upper:.4f}"
+        f"｜风险位:{signal.stop_loss:.4f}｜理由:{reason}"
+    )
+
+
+def _render_action_points_lines(
+    signals: list[Signal],
+    candidates: list[CandidateScore] | None,
+    include_buy_zone: bool = True,
+    max_candidates: int = 3,
+) -> list[str]:
+    lines = ["## 操作要点"]
+    if signals:
+        for signal in signals:
+            lines.append(_action_point_line(signal, include_buy_zone=include_buy_zone))
+    else:
+        lines.append("- 暂无可用自选标的信号。")
+    if candidates:
+        lines.append("")
+        lines.append("### 今日关注（自选外候选）")
+        for candidate in candidates[:max_candidates]:
+            lines.append(_candidate_point_line(candidate))
+    return lines
