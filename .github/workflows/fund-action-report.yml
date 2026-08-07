@@ -1,4 +1,4 @@
-name: Fund Action Report
+name: Intraday Quant Report
 
 on:
   schedule:

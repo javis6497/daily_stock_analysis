@@ -6,6 +6,7 @@ from .config import AppConfig
 from .models import (
     BacktestSummary,
     CandidateScore,
+    DailyPickRecap,
     DataFreshnessReport,
     FundIntradayEstimate,
     Instrument,
@@ -72,6 +73,7 @@ def render_action_report(
     position_advices: dict[str, PositionAdvice] | None = None,
     thesis_reviews: dict[str, ThesisReview] | None = None,
     audit_result: ReportAuditResult | None = None,
+    recap_items: list[DailyPickRecap] | None = None,
     dashboard_url: str | None = None,
 ) -> str:
     title = "盘前量化日报" if session == "premarket" else "盘后量化复盘"
@@ -85,7 +87,7 @@ def render_action_report(
     lines.extend(
         _render_action_points_lines(
             signals,
-            candidates if session != "postmarket" else None,
+            candidates,
             include_buy_zone=(session != "postmarket"),
         )
     )
@@ -97,6 +99,7 @@ def render_action_report(
             portfolio_summary,
             freshness_report,
             audit_result,
+            recap_items,
             dashboard_url,
         )
     lines.extend(_market_environment_lines(market_environment))
@@ -159,6 +162,7 @@ def _render_postmarket_action_report(
     portfolio_summary: PortfolioSummary | None,
     freshness_report: DataFreshnessReport | None,
     audit_result: ReportAuditResult | None,
+    recap_items: list[DailyPickRecap] | None,
     dashboard_url: str | None,
 ) -> str:
     lines.extend(["## 盘后复盘重点"])
@@ -196,6 +200,9 @@ def _render_postmarket_action_report(
             )
     else:
         lines.extend(["- 暂无可用自选标的信号。", ""])
+
+    if recap_items:
+        lines.extend(["", render_daily_recap_report(recap_items)])
 
     if audit_result is not None and audit_result.items:
         audit_summary = render_audit_summary(audit_result)
@@ -253,31 +260,26 @@ def render_fund_action_report(
     intraday_estimates: dict[str, FundIntradayEstimate] | None = None,
     position_advices: dict[str, PositionAdvice] | None = None,
     thesis_reviews: dict[str, ThesisReview] | None = None,
+    candidates: list[CandidateScore] | None = None,
     audit_result: ReportAuditResult | None = None,
     dashboard_url: str | None = None,
 ) -> str:
-    fund_signals = [
-        signal
-        for signal in signals
-        if signal.instrument.asset_type.lower() in {"fund", "etf"}
-    ]
     lines = [
-        f"# 14:00基金操作提醒 - {report_date.isoformat()}",
+        f"# 14:00盘中操作参考 - {report_date.isoformat()}",
         "",
-        "- 推送口径：仅自选基金/ETF操作信号，不含股票、不含资讯、不含自选外候选。",
-        "- 时间目的：基金通常需在 15:00 前确认申购/赎回，14:00 提前给出量化观察。",
+        "- 推送口径：自选股/基金操作信号 + 盘中推荐候选 + 风险提示；基金需在 15:00 前确认申购/赎回。",
         "- 数据口径：基于当前可用最新净值/行情；如配置代理 ETF/指数，会显示 14:00 盘中估算。",
         "",
     ]
-    lines.extend(_render_action_points_lines(fund_signals, None, include_buy_zone=True))
+    lines.extend(_render_action_points_lines(signals, candidates, include_buy_zone=True))
     if market_environment is not None:
         lines.append(
             f"- 盘中背景：{market_environment.status} / {market_environment.risk_level}；{market_environment.position_bias}"
         )
-    lines.extend(["", "## 自选基金操作信号"])
+    lines.extend(["", "## 自选股/基金盘中信号"])
 
-    if fund_signals:
-        for signal in fund_signals:
+    if signals:
+        for signal in signals:
             instrument = signal.instrument
             lines.extend(
                 [
@@ -291,7 +293,7 @@ def render_fund_action_report(
                 ]
             )
     else:
-        lines.extend(["- 当前自选列表中没有基金/ETF信号。", ""])
+        lines.extend(["- 暂无可用自选标的信号。", ""])
 
     if audit_result is not None and audit_result.items:
         audit_summary = render_audit_summary(audit_result)
@@ -306,6 +308,26 @@ def render_fund_action_report(
         ]
     )
     return "\n".join(line for line in lines if line is not None)
+
+
+def render_daily_recap_report(
+    recaps: list[DailyPickRecap],
+) -> str:
+    session_labels = {"premarket": "盘前推荐", "fund_action": "盘中推荐"}
+    lines = ["## 今日推荐回顾"]
+    if not recaps:
+        lines.append("- 今日无盘前/盘中推荐记录。")
+        return "\n".join(lines)
+    for recap in recaps:
+        label = session_labels.get(recap.session, recap.session)
+        zone = f"{recap.buy_low:.4f}-{recap.buy_high:.4f}"
+        base = f"- {recap.name}({recap.symbol})：{label} 观察区{zone}"
+        if recap.last_close is None:
+            lines.append(f"{base} → 暂无今日行情")
+            continue
+        pnl = _pct(recap.last_close / recap.ref_price - 1) if recap.ref_price else "N/A"
+        lines.append(f"{base} → 现价{recap.last_close:.4f}（{pnl}）｜风险位{recap.risk:.4f}")
+    return "\n".join(lines)
 
 
 def render_weekend_news_report(
@@ -432,7 +454,7 @@ def render_missed_delivery_report(
     labels = {
         "premarket": "盘前量化日报",
         "postmarket": "盘后量化复盘",
-        "fund_action": "14:00基金操作提醒",
+        "fund_action": "14:00盘中操作参考",
         "weekend_news": "周末量化周报",
     }
     lines = [

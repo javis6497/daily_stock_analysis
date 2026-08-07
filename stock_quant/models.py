@@ -274,3 +274,19 @@ class MonthlyHoldingReview:
     signal: Signal
     monthly_change: float | None = None
     monthly_drawdown: float | None = None
+
+
+@dataclass(frozen=True)
+class DailyPickRecap:
+    """One line in the postmarket "今日推荐回顾": a pick from an earlier
+    session (盘前/盘中) and how it closed today."""
+
+    session: str
+    symbol: str
+    name: str
+    asset_type: str
+    ref_price: float
+    buy_low: float
+    buy_high: float
+    risk: float
+    last_close: float | None = None

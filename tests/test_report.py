@@ -214,7 +214,7 @@ def test_render_daily_news_report_contains_only_news_not_action_advice():
     assert "自选股/基金信号" not in markdown
 
 
-def test_render_fund_action_report_contains_only_fund_signals():
+def test_render_intraday_report_covers_stocks_funds_and_action_points():
     config_mod = require_module("stock_quant.config")
     models = require_module("stock_quant.models")
     report = require_module("stock_quant.report")
@@ -251,9 +251,11 @@ def test_render_fund_action_report_contains_only_fund_signals():
         signals=[stock_signal, fund_signal],
     )
 
-    assert "14:00基金操作提醒" in markdown
+    assert "14:00盘中操作参考" in markdown
     assert "基金018044" in markdown
-    assert "平安银行" not in markdown
+    assert "平安银行" in markdown
+    assert "操作要点" in markdown
+    assert "盘中背景" not in markdown
     assert "相关资讯" not in markdown
     assert "自选外量化候选" not in markdown
 
@@ -330,3 +332,77 @@ def test_render_action_report_leads_with_action_points_block():
     assert "今日关注（自选外候选）" in markdown
     assert "沪深300ETF(510300)" in markdown
     assert "理由:资金流入；趋势修复" in markdown
+
+
+def test_render_daily_recap_report_shows_pick_performance():
+    models = require_module("stock_quant.models")
+    report = require_module("stock_quant.report")
+
+    recaps = [
+        models.DailyPickRecap(
+            session="premarket", symbol="510300", name="沪深300ETF", asset_type="etf",
+            ref_price=3.6, buy_low=3.5, buy_high=3.6, risk=3.4, last_close=3.72,
+        ),
+        models.DailyPickRecap(
+            session="fund_action", symbol="000001", name="平安银行", asset_type="stock",
+            ref_price=11.0, buy_low=10.8, buy_high=11.0, risk=10.5, last_close=None,
+        ),
+    ]
+
+    markdown = report.render_daily_recap_report(recaps)
+
+    assert "今日推荐回顾" in markdown
+    assert "沪深300ETF(510300)" in markdown
+    assert "盘前推荐" in markdown
+    assert "观察区3.5000-3.6000" in markdown
+    assert "现价3.7200（3.33%）" in markdown
+    assert "平安银行(000001)" in markdown
+    assert "盘中推荐" in markdown
+    assert "暂无今日行情" in markdown
+
+
+def test_render_daily_recap_report_empty():
+    report = require_module("stock_quant.report")
+    markdown = report.render_daily_recap_report([])
+    assert "今日推荐回顾" in markdown
+    assert "无盘前/盘中推荐记录" in markdown
+
+
+def test_postmarket_report_includes_recap_and_today_watch():
+    config_mod = require_module("stock_quant.config")
+    models = require_module("stock_quant.models")
+    report = require_module("stock_quant.report")
+    instrument = models.Instrument(symbol="018044", name="基金018044", market="cn", asset_type="fund")
+    signal = models.Signal(
+        instrument=instrument, status="偏强", action="回踩观察", last_close=2.2,
+        buy_zone=models.PriceRange(2.1, 2.2), stop_loss=1.9, take_profit=2.4,
+        confidence=0.78, reasons=("趋势向上",), risks=(),
+    )
+    candidate = models.CandidateScore(
+        instrument=models.Instrument(symbol="510300", name="沪深300ETF", market="cn", asset_type="etf"),
+        score=0.85, group="宽基", reasons=("资金流入", "趋势修复"),
+        signal=models.Signal(
+            instrument=models.Instrument(symbol="510300", name="沪深300ETF", market="cn", asset_type="etf"),
+            status="偏强", action="关注", last_close=3.6,
+            buy_zone=models.PriceRange(3.5, 3.6), stop_loss=3.4, take_profit=4.0,
+            confidence=0.7, reasons=("资金流入",), risks=(),
+        ),
+    )
+    recap = models.DailyPickRecap(
+        session="premarket", symbol="510300", name="沪深300ETF", asset_type="etf",
+        ref_price=3.6, buy_low=3.5, buy_high=3.6, risk=3.4, last_close=3.72,
+    )
+
+    markdown = report.render_action_report(
+        session="postmarket",
+        report_date=date(2026, 8, 6),
+        config=config_mod.AppConfig(watchlist=[instrument]),
+        signals=[signal],
+        candidates=[candidate],
+        recap_items=[recap],
+    )
+
+    assert "今日推荐回顾" in markdown
+    assert "今日关注（自选外候选）" in markdown
+    assert "沪深300ETF(510300)" in markdown
+    assert "3.7200（3.33%）" in markdown

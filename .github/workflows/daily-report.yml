@@ -84,6 +84,7 @@ jobs:
       DELIVERY_TOLERANCE_MINUTES: ${{ inputs.delivery_tolerance_minutes }}
       MARKET_DATA_CACHE_DIR: .market-data-cache
       DELIVERY_JOURNAL_DIR: .report-state
+      PICKS_DIR: .report-picks
 
     steps:
       - name: Checkout
@@ -152,6 +153,15 @@ jobs:
             echo "completed=false" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Restore daily picks
+        id: picks-restore
+        if: env.SCHEDULED_RUN == 'true'
+        uses: actions/cache/restore@v5
+        with:
+          path: .report-picks
+          key: report-picks-${{ env.REPORT_DATE }}-${{ github.run_id }}
+          restore-keys: report-picks-${{ env.REPORT_DATE }}-
+
       - name: Run tests
         if: env.SCHEDULED_RUN != 'true'
         run: python -m pytest
@@ -209,6 +219,14 @@ jobs:
         with:
           path: .report-state
           key: ${{ steps.report-meta.outputs.state_prefix }}${{ github.run_id }}
+
+      - name: Save daily picks
+        if: always() && env.SCHEDULED_RUN == 'true'
+        continue-on-error: true
+        uses: actions/cache/save@v5
+        with:
+          path: .report-picks
+          key: report-picks-${{ env.REPORT_DATE }}-${{ github.run_id }}
 
       - name: Upload report artifact
         if: (env.SCHEDULED_RUN != 'true' || steps.delivery-state.outputs.completed != 'true') && success()

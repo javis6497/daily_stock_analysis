@@ -146,6 +146,13 @@ def _run_report(args: argparse.Namespace) -> int:
         market_environment=market_environment,
         quality_profiles=quality_profiles,
     )
+    if args.session == "premarket":
+        _save_daily_picks(report_day, "premarket", candidates)
+    recap_items = None
+    if args.session == "postmarket":
+        recap_items = _build_daily_recap(
+            provider, candidate_pool, candidate_bars, report_day, app_config.data.lookback_days
+        )
     position_advices = build_position_advices(signals, portfolio_summary, market_environment)
     thesis_reviews = build_thesis_reviews(signals)
     alerts = build_alerts(signals, candidates, freshness_report, portfolio_summary)
@@ -164,6 +171,7 @@ def _run_report(args: argparse.Namespace) -> int:
         backtest_summary,
         position_advices,
         thesis_reviews,
+        recap_items=recap_items,
         dashboard_url=_dashboard_url(args),
     )
     action_markdown = _append_dashboard_link(action_markdown, _dashboard_url(args))
@@ -181,6 +189,7 @@ def _run_report(args: argparse.Namespace) -> int:
         position_advices,
         thesis_reviews,
         audit_result,
+        recap_items=recap_items,
         dashboard_url=_dashboard_url(args),
     )
     messages = [
@@ -294,10 +303,10 @@ def _run_weekend_news_report(args: argparse.Namespace, app_config, report_day: d
 
 def _run_fund_action_report(args: argparse.Namespace, app_config, report_day: date, provider_name: str) -> int:
     if app_config.report.skip_non_trading_day and not args.dry_run and not is_cn_trading_day(report_day):
-        message = f"{report_day.isoformat()} 不是 A 股交易日，跳过基金操作提醒。"
+        message = f"{report_day.isoformat()} 不是 A 股交易日，跳过盘中操作参考。"
         if args.send:
             _send_messages(
-                [("基金操作提醒跳过", message)],
+                [("盘中操作参考跳过", message)],
                 send=True,
                 dry_run=args.dry_run,
                 session=args.session,
@@ -310,14 +319,9 @@ def _run_fund_action_report(args: argparse.Namespace, app_config, report_day: da
             print(message)
         return 0
 
-    fund_watchlist = [
-        instrument
-        for instrument in app_config.watchlist
-        if instrument.asset_type.lower() in {"fund", "etf"}
-    ]
     provider = create_provider(provider_name)
     market_environment = build_market_environment(provider, app_config.data.lookback_days)
-    watch_bars = fetch_many(provider, fund_watchlist, app_config.data.lookback_days)
+    watch_bars = fetch_many(provider, app_config.watchlist, app_config.data.lookback_days)
     signals = [
         analyze_instrument(instrument, bars, app_config.report.risk_profile)
         for instrument, bars in watch_bars.items()
@@ -327,7 +331,21 @@ def _run_fund_action_report(args: argparse.Namespace, app_config, report_day: da
     thesis_reviews = build_thesis_reviews(signals)
     proxy_bars = fetch_many(provider, build_proxy_instruments(signals), app_config.data.lookback_days, strict=False)
     intraday_estimates = build_fund_intraday_estimates(signals, proxy_bars, market_environment)
-    alerts = build_alerts(signals, [], build_data_freshness(report_day, fund_watchlist, watch_bars), portfolio_summary)
+    candidate_pool = build_recommendation_pool(app_config)
+    candidate_bars = fetch_many(provider, candidate_pool, app_config.data.lookback_days, strict=False)
+    quality_profiles = _build_quality_profiles(provider_name, candidate_bars)
+    candidates = rank_candidates(
+        candidate_bars,
+        top_n=app_config.report.top_n,
+        risk_profile=app_config.report.risk_profile,
+        max_per_group=app_config.recommendation.max_candidates_per_group,
+        max_single_day_pct=app_config.recommendation.max_candidate_single_day_pct,
+        market_environment=market_environment,
+        quality_profiles=quality_profiles,
+    )
+    _save_daily_picks(report_day, "fund_action", candidates)
+    freshness_report = build_data_freshness(report_day, app_config.watchlist, watch_bars)
+    alerts = build_alerts(signals, candidates, freshness_report, portfolio_summary)
     markdown = render_fund_action_report(
         report_day,
         app_config,
@@ -336,6 +354,7 @@ def _run_fund_action_report(args: argparse.Namespace, app_config, report_day: da
         intraday_estimates,
         position_advices,
         thesis_reviews,
+        candidates,
         dashboard_url=_dashboard_url(args),
     )
     markdown = _append_dashboard_link(markdown, _dashboard_url(args))
@@ -348,19 +367,20 @@ def _run_fund_action_report(args: argparse.Namespace, app_config, report_day: da
         intraday_estimates,
         position_advices,
         thesis_reviews,
+        candidates,
         audit_result,
         dashboard_url=_dashboard_url(args),
     )
-    messages = [("14:00基金操作提醒", markdown)]
+    messages = [("14:00盘中操作参考", markdown)]
     if alerts:
-        messages.append(("基金异常提醒", render_alert_report(report_day, args.session, alerts)))
+        messages.append(("盘中异常提醒", render_alert_report(report_day, args.session, alerts)))
     archived_files = _archive_messages(args.archive_dir, args.session, report_day, messages)
     ledger_json_path = _write_ledger_if_requested(
         args.ledger_dir,
         args.session,
         report_day,
         signals,
-        [],
+        candidates,
         market_environment,
         portfolio_summary,
         alerts,
@@ -408,6 +428,63 @@ def _build_quality_profiles(provider_name: str, candidate_bars: dict) -> dict:
         )
     )
     return profiles
+
+
+def _save_daily_picks(report_day: date, session: str, candidates) -> None:
+    """Persist today's top candidate picks for the postmarket recap."""
+    picks_dir = os.environ.get("PICKS_DIR")
+    if not picks_dir or not candidates:
+        return
+    from .picks import candidate_picks, load_daily_picks, merge_picks, save_daily_picks
+
+    new_picks = candidate_picks(candidates, session)
+    existing = load_daily_picks(picks_dir, report_day)
+    save_daily_picks(picks_dir, report_day, merge_picks(existing, new_picks))
+
+
+def _build_daily_recap(
+    provider,
+    candidate_pool,
+    candidate_bars,
+    report_day: date,
+    lookback_days: int,
+) -> list:
+    """Build the postmarket "今日推荐回顾" from the day's persisted picks."""
+    picks_dir = os.environ.get("PICKS_DIR")
+    if not picks_dir:
+        return []
+    from .models import DailyPickRecap
+    from .picks import load_daily_picks
+
+    picks = load_daily_picks(picks_dir, report_day)
+    if not picks:
+        return []
+    by_symbol = {instrument.symbol: instrument for instrument in candidate_pool}
+    recaps = []
+    for pick in picks:
+        symbol = pick.get("symbol")
+        if not symbol:
+            continue
+        bars = candidate_bars.get(symbol)
+        if bars is None:
+            instrument = by_symbol.get(symbol)
+            if instrument is not None:
+                bars = fetch_many(provider, [instrument], lookback_days, strict=False).get(symbol)
+        last_close = float(bars[-1].close) if bars else None
+        recaps.append(
+            DailyPickRecap(
+                session=pick.get("session", ""),
+                symbol=symbol,
+                name=pick.get("name", symbol),
+                asset_type=pick.get("asset_type", ""),
+                ref_price=float(pick.get("ref_price", 0.0)),
+                buy_low=float(pick.get("buy_low", 0.0)),
+                buy_high=float(pick.get("buy_high", 0.0)),
+                risk=float(pick.get("risk", 0.0)),
+                last_close=last_close,
+            )
+        )
+    return recaps
 
 
 def _resolve_display_names(app_config, provider_name: str):

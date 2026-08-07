@@ -149,7 +149,7 @@ watchlist:
     assert "买入观察区" not in result.stdout
 
 
-def test_cli_fund_action_dry_run_generates_fund_only_report(tmp_path):
+def test_cli_intraday_dry_run_covers_stocks_funds_and_action_points(tmp_path):
     config_path = tmp_path / "watchlist.yml"
     config_path.write_text(
         """
@@ -188,9 +188,10 @@ watchlist:
     )
 
     assert result.returncode == 0, result.stderr
-    assert "14:00基金操作提醒" in result.stdout
+    assert "14:00盘中操作参考" in result.stdout
     assert "基金018044" in result.stdout
-    assert "平安银行" not in result.stdout
+    assert "平安银行" in result.stdout
+    assert "操作要点" in result.stdout
     assert "资讯摘要" not in result.stdout
 
 

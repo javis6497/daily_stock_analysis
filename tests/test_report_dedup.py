@@ -56,7 +56,7 @@ def test_fund_action_report_omits_repeated_daily_sections():
         thesis_reviews={"018044": thesis_review},
     )
 
-    assert "14:00基金操作提醒" in markdown
+    assert "14:00盘中操作参考" in markdown
     assert "基金018044" in markdown
     assert "市场环境" not in markdown
     assert "持仓逻辑跟踪" not in markdown
