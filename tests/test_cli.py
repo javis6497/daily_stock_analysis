@@ -143,9 +143,9 @@ watchlist:
 
     assert result.returncode == 0, result.stderr
     assert "周末量化周报" in result.stdout
-    assert "本周持仓回顾" in result.stdout
+    assert "下周操作要点" in result.stdout
+    assert "本周小结" in result.stdout
     assert "基金018044" in result.stdout
-    assert "本周涨跌" in result.stdout
     assert "买入观察区" not in result.stdout
 
 

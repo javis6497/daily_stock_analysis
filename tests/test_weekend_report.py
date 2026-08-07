@@ -78,16 +78,18 @@ def test_render_weekend_news_report_contains_news_focus_and_no_trade_ranges():
 
     assert "周末量化周报" in markdown
     assert "政策预期带动基金关注度提升" in markdown
-    assert "本周持仓回顾" in markdown
+    assert "下周操作要点" in markdown
     assert "基金018044" in markdown
-    assert "本周涨跌：3.50%" in markdown
-    assert "本周最大回撤：1.80%" in markdown
-    assert "月度复盘" in markdown
-    assert "近30日涨跌：8.20%" in markdown
-    assert "近30日最大回撤：3.10%" in markdown
+    assert "状态:偏强" in markdown
+    assert "下周:观察能否守住 MA20" in markdown
+    assert "本周小结" in markdown
+    assert "本周 3.50% / 回撤 1.80%" in markdown
+    assert "近30日 8.20% / 回撤 3.10%" in markdown
     assert "下周观察计划" in markdown
     assert "自选外候选更新" in markdown
     assert "沪深300ETF" in markdown
     assert "买入观察区" not in markdown
     assert "止损" not in markdown
+    assert "月度复盘" not in markdown
+    assert "风险事件日历" not in markdown
     assert "不构成保证收益" in markdown

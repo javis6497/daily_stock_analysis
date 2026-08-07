@@ -350,36 +350,12 @@ def render_weekend_news_report(
         "- 周末不生成具体交易价位或即时卖出指令，避免用休市行情给出交易结论。",
         "",
     ]
-    lines.extend(_market_environment_lines(market_environment))
-    lines.extend(["", *_weekend_portfolio_summary_lines(portfolio_summary, weekly_reviews, monthly_reviews)])
-    lines.extend(["", "## 本周持仓回顾"])
-    if weekly_reviews:
-        for review in weekly_reviews:
-            signal = review.signal
-            lines.extend(
-                [
-                    f"### {review.instrument.name} ({review.instrument.symbol})",
-                    f"- 本周涨跌：{_pct(review.weekly_change)}；本周最大回撤：{_pct(review.weekly_drawdown)}",
-                    f"- 最新状态：{signal.status}；下周关注：{_next_week_focus(signal)}",
-                ]
-            )
-    else:
-        for instrument in config.watchlist:
-            lines.append(f"- {instrument.name} ({instrument.symbol})：暂无可用周度行情，先关注资讯和下周开盘确认。")
-
-    lines.extend(["", "## 月度复盘"])
-    if monthly_reviews:
-        for review in monthly_reviews:
-            lines.extend(
-                [
-                    f"### {review.instrument.name} ({review.instrument.symbol})",
-                    f"- 近30日涨跌：{_pct(review.monthly_change)}；近30日最大回撤：{_pct(review.monthly_drawdown)}",
-                    f"- 当前状态：{review.signal.status}；复盘提示：{_monthly_review_note(review.signal.status)}",
-                ]
-            )
-    else:
-        lines.append("- 暂无可用月度行情。")
-
+    lines.extend(_render_weekend_action_points_lines(weekly_reviews, config))
+    if market_environment is not None:
+        lines.append(
+            f"- 市场环境：{market_environment.status} / {market_environment.risk_level}；{market_environment.position_bias}"
+        )
+    lines.extend(["", *_weekend_summary_lines(portfolio_summary, weekly_reviews, monthly_reviews)])
     lines.extend(["", "## 自选外候选更新"])
     if candidates:
         for rank, candidate in enumerate(candidates, start=1):
@@ -402,11 +378,6 @@ def render_weekend_news_report(
     lines.extend(
         [
             "",
-            "## 风险事件日历",
-            "- 政策、利率、汇率和海外市场变化对 A 股风险偏好的影响。",
-            "- 持仓基金相关行业是否出现持续资金流入或突发风险事件。",
-            "- 关注基金净值披露滞后、重仓行业公告和周一开盘后的成交反馈。",
-            "",
             "## 下周观察计划",
             "- 偏强标的：优先观察回踩后能否守住 MA20 和近期支撑，不在高波动中追涨。",
             "- 观察标的：等待趋势和动量重新确认，再考虑是否恢复仓位。",
@@ -417,6 +388,56 @@ def render_weekend_news_report(
         ]
     )
     return "\n".join(lines)
+
+
+def _render_weekend_action_points_lines(
+    weekly_reviews: list[WeeklyHoldingReview],
+    config: AppConfig,
+) -> list[str]:
+    lines = ["## 下周操作要点"]
+    if weekly_reviews:
+        for review in weekly_reviews:
+            signal = review.signal
+            parts = [
+                f"{review.instrument.name}({review.instrument.symbol})",
+                f"状态:{signal.status}",
+            ]
+            if signal.stop_loss > 0:
+                parts.append(f"风险位:{signal.stop_loss:.4f}(距离{_pct(signal.last_close / signal.stop_loss - 1)})")
+            parts.append(f"下周:{_next_week_focus(signal)}")
+            lines.append("- " + "｜".join(parts))
+    else:
+        for instrument in config.watchlist:
+            lines.append(f"- {instrument.name}({instrument.symbol})：暂无可用周度行情，先关注资讯和下周开盘确认。")
+    return lines
+
+
+def _weekend_summary_lines(
+    portfolio_summary: PortfolioSummary | None,
+    weekly_reviews: list[WeeklyHoldingReview],
+    monthly_reviews: list[MonthlyHoldingReview],
+) -> list[str]:
+    lines = ["## 本周小结"]
+    if portfolio_summary is not None and portfolio_summary.total_principal > 0:
+        lines.append(
+            f"- 组合估算市值：{portfolio_summary.total_market_value:.2f}；估算总盈亏：{portfolio_summary.total_pnl_pct:.2%}（{portfolio_summary.total_pnl_amount:.2f}）"
+        )
+    if weekly_reviews:
+        best = max(weekly_reviews, key=lambda item: item.weekly_change if item.weekly_change is not None else -999)
+        worst = min(weekly_reviews, key=lambda item: item.weekly_change if item.weekly_change is not None else 999)
+        lines.append(
+            f"- 本周表现最好：{best.instrument.name} {_pct(best.weekly_change)}；风险最高：{worst.instrument.name} 回撤 {_pct(worst.weekly_drawdown)}"
+        )
+        monthly_by_symbol = {review.instrument.symbol: review for review in monthly_reviews}
+        for review in weekly_reviews:
+            monthly = monthly_by_symbol.get(review.instrument.symbol)
+            month_part = f"；近30日 {_pct(monthly.monthly_change)} / 回撤 {_pct(monthly.monthly_drawdown)}" if monthly else ""
+            lines.append(
+                f"- {review.instrument.name}({review.instrument.symbol})：本周 {_pct(review.weekly_change)} / 回撤 {_pct(review.weekly_drawdown)}{month_part}"
+            )
+    else:
+        lines.append("- 暂无足够持仓数据生成周度小结。")
+    return lines
 
 
 def render_failure_report(
@@ -768,46 +789,12 @@ def _holding_advice(signal: Signal) -> str:
     return "信号尚未确认，维持轻仓观察，等待量价或均线重新确认。"
 
 
-def _weekend_portfolio_summary_lines(
-    portfolio_summary: PortfolioSummary | None,
-    weekly_reviews: list[WeeklyHoldingReview],
-    monthly_reviews: list[MonthlyHoldingReview],
-) -> list[str]:
-    lines = ["## 组合周/月总结"]
-    if portfolio_summary is not None and portfolio_summary.total_principal > 0:
-        lines.extend(
-            [
-                f"- 组合估算市值：{portfolio_summary.total_market_value:.2f}",
-                f"- 组合估算总盈亏：{portfolio_summary.total_pnl_pct:.2%}（{portfolio_summary.total_pnl_amount:.2f}）",
-            ]
-        )
-    if weekly_reviews:
-        best_week = max(weekly_reviews, key=lambda item: item.weekly_change if item.weekly_change is not None else -999)
-        worst_week = min(weekly_reviews, key=lambda item: item.weekly_change if item.weekly_change is not None else 999)
-        lines.append(f"- 本周表现最好：{best_week.instrument.name} {_pct(best_week.weekly_change)}")
-        lines.append(f"- 本周风险最高：{worst_week.instrument.name}，本周回撤 {_pct(worst_week.weekly_drawdown)}")
-    if monthly_reviews:
-        best_month = max(monthly_reviews, key=lambda item: item.monthly_change if item.monthly_change is not None else -999)
-        lines.append(f"- 近30日表现最好：{best_month.instrument.name} {_pct(best_month.monthly_change)}")
-    if len(lines) == 1:
-        lines.append("- 暂无足够持仓数据生成组合总结。")
-    return lines
-
-
 def _next_week_focus(signal: Signal) -> str:
     if signal.status == "偏强":
         return f"观察能否守住 MA20（{_fmt(signal.ma20)}）和风险位（{signal.stop_loss:.4f}）"
     if signal.status == "偏弱":
         return f"观察能否重新站回 MA20（{_fmt(signal.ma20)}），否则继续控制回撤"
     return f"观察 MA20（{_fmt(signal.ma20)}）与 MA60（{_fmt(signal.ma60)}）方向是否重新一致"
-
-
-def _monthly_review_note(status: str) -> str:
-    if status == "偏强":
-        return "月度趋势偏强，继续关注回撤是否受控。"
-    if status == "偏弱":
-        return "月度表现偏弱，优先控制仓位和风险位。"
-    return "月度方向未完全确认，等待趋势进一步清晰。"
 
 
 def _short_action_label(signal: Signal) -> str:
