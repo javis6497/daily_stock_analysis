@@ -1,14 +1,15 @@
 // Cloudflare Free plan allows at most 5 cron triggers per account, so each
 // session gets a single wake-up at T-10 (Beijing); the core workflow sleeps
-// until its delivery window opens. Weekday sessions use `1-5`; the weekend
-// session needs separate Saturday (6) and Sunday (7) entries because Cloudflare
-// uses ISO weekday numbering (7=Sunday) and rejects comma lists like "6,0".
+// until its delivery window opens. Cloudflare uses Quartz day-of-week
+// numbering (1=Sunday ... 7=Saturday), NOT standard cron: weekdays run on
+// Mon-Fri = 2-6, and the weekend session needs separate Saturday (7) and
+// Sunday (1) entries. Comma lists like "6,0" are rejected.
 const SCHEDULES = Object.freeze({
-  "27 0 * * 1-5": { session: "premarket", target: "08:37" },
-  "57 5 * * 1-5": { session: "fund_action", target: "14:07" },
-  "27 8 * * 1-5": { session: "postmarket", target: "16:37" },
-  "27 1 * * 6": { session: "weekend_news", target: "09:37" },
-  "27 1 * * 7": { session: "weekend_news", target: "09:37" }
+  "27 0 * * 2-6": { session: "premarket", target: "08:37" },
+  "57 5 * * 2-6": { session: "fund_action", target: "14:07" },
+  "27 8 * * 2-6": { session: "postmarket", target: "16:37" },
+  "27 1 * * 7": { session: "weekend_news", target: "09:37" },
+  "27 1 * * 1": { session: "weekend_news", target: "09:37" }
 });
 
 export function scheduleForCron(cron) {

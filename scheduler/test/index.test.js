@@ -9,28 +9,30 @@ import {
 } from "../src/index.js";
 
 test("maps Cloudflare cron triggers to Beijing report slots", () => {
-  assert.deepEqual(scheduleForCron("27 0 * * 1-5"), {
+  // Cloudflare uses Quartz day-of-week numbering (1=Sunday ... 7=Saturday),
+  // so weekdays are 2-6, Saturday is 7 and Sunday is 1.
+  assert.deepEqual(scheduleForCron("27 0 * * 2-6"), {
     session: "premarket",
     target: "08:37"
   });
-  assert.deepEqual(scheduleForCron("57 5 * * 1-5"), {
+  assert.deepEqual(scheduleForCron("57 5 * * 2-6"), {
     session: "fund_action",
     target: "14:07"
   });
-  assert.deepEqual(scheduleForCron("27 8 * * 1-5"), {
+  assert.deepEqual(scheduleForCron("27 8 * * 2-6"), {
     session: "postmarket",
     target: "16:37"
-  });
-  // Weekend day-of-week uses ISO numbering (6=Sat, 7=Sun); Cloudflare
-  // rejects comma lists like "6,0" and the weekday 0.
-  assert.deepEqual(scheduleForCron("27 1 * * 6"), {
-    session: "weekend_news",
-    target: "09:37"
   });
   assert.deepEqual(scheduleForCron("27 1 * * 7"), {
     session: "weekend_news",
     target: "09:37"
   });
+  assert.deepEqual(scheduleForCron("27 1 * * 1"), {
+    session: "weekend_news",
+    target: "09:37"
+  });
+  // Rejected: 1-5 is Sun-Thu in Quartz, comma lists, and weekday 0.
+  assert.equal(scheduleForCron("27 0 * * 1-5"), null);
   assert.equal(scheduleForCron("27 1 * * 6,0"), null);
   assert.equal(scheduleForCron("27 1 * * 0"), null);
   assert.equal(scheduleForCron("0 0 * * *"), null);
